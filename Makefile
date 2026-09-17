@@ -354,7 +354,7 @@ build-console-image:
 	  --set namespace="$$KFP_NAMESPACE" \
 	  --set console.enabled=true \
 	  -s templates/console-app.yaml | oc apply -n $$KFP_NAMESPACE -f - && \
-	oc start-build code-understanding-console --from-dir=ui --follow -n $$KFP_NAMESPACE
+	oc start-build code-understanding-console --from-dir=ui --wait -n $$KFP_NAMESPACE
 
 run-console-app:
 	@set -a && . $(ENV_FILE) && set +a && \
