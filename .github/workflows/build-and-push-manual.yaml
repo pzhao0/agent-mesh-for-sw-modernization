@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       target_branch:
-        description: Branch or tag to build
+        description: Target branch for building
         required: false
         default: main
         type: string
@@ -25,16 +25,14 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  KFP_IMAGE_REGISTRY: quay.io/rh-ai-quickstart
-  KFP_DATA_GENERATION_BASE_IMAGE_NAME: agent-mesh-for-sw-modernization-data-generation
-  KFP_INDEXING_BASE_IMAGE_NAME: agent-mesh-for-sw-modernization-data-indexing
-  # Analysis intentionally uses the same image as indexing.
-  KFP_ANALYSIS_BASE_IMAGE_NAME: agent-mesh-for-sw-modernization-data-indexing
-  KFP_PIPELINE_TOOLS_IMAGE_NAME: agent-mesh-for-sw-modernization-pipeline-tools
+  REGISTRY: quay.io/rh-ai-quickstart
+
+# The adopting repository must provide `build-all-images` and `push-all-images`
+# Make targets that use the VERSION and REGISTRY environment variables.
 
 jobs:
   build-and-push:
-    name: Build and push KFP images
+    name: Build and push images
     runs-on: ubuntu-latest
 
     steps:
@@ -49,7 +47,7 @@ jobs:
           fi
 
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.target_branch }}
 
@@ -63,33 +61,14 @@ jobs:
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
 
-      - name: Build and push data-generation image
-        uses: docker/build-push-action@v6
-        with:
-          context: resources/images/data-generation
-          file: resources/images/data-generation/Containerfile
-          push: true
-          tags: ${{ env.KFP_IMAGE_REGISTRY }}/${{ env.KFP_DATA_GENERATION_BASE_IMAGE_NAME }}:${{ inputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Build all Images
+        run: |
+          echo "Building images with version: ${{ inputs.version }}"
+          echo "Using registry: ${{ env.REGISTRY }}"
+          VERSION="${{ inputs.version }}" make build-all-images
 
-      # Analysis and indexing deliberately use the same image.
-      - name: Build and push data-indexing image
-        uses: docker/build-push-action@v6
-        with:
-          context: resources/images/data-indexing
-          file: resources/images/data-indexing/Containerfile
-          push: true
-          tags: ${{ env.KFP_IMAGE_REGISTRY }}/${{ env.KFP_INDEXING_BASE_IMAGE_NAME }}:${{ inputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build and push pipeline-tools image
-        uses: docker/build-push-action@v6
-        with:
-          context: resources/images/pipeline-tools
-          file: resources/images/pipeline-tools/Containerfile
-          push: true
-          tags: ${{ env.KFP_IMAGE_REGISTRY }}/${{ env.KFP_PIPELINE_TOOLS_IMAGE_NAME }}:${{ inputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Push all Images
+        run: |
+          echo "Pushing images with version: ${{ inputs.version }}"
+          echo "Using registry: ${{ env.REGISTRY }}"
+          VERSION="${{ inputs.version }}" make push-all-images

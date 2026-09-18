@@ -8,6 +8,21 @@ PIPELINE_GIT_REPO   	?=
 PIPELINE_GIT_BRANCH 	?=
 PIPELINE_GIT_REPO_LIST	?=
 DEPLOY_EMBEDDING_MODEL ?= false
+# Local development uses Podman by default. GitHub Actions sets CI=true and
+# provides Docker Buildx; callers can override this with CONTAINER_ENGINE.
+CONTAINER_ENGINE      ?= $(if $(CI),docker,podman)
+REGISTRY              ?=
+VERSION               ?=
+
+ifeq ($(CONTAINER_ENGINE),docker)
+IMAGE_BUILD := docker buildx build --load
+IMAGE_PUSH  := docker push
+else ifeq ($(CONTAINER_ENGINE),podman)
+IMAGE_BUILD := podman build
+IMAGE_PUSH  := podman push
+else
+$(error Unsupported CONTAINER_ENGINE '$(CONTAINER_ENGINE)'; use docker or podman)
+endif
 
 .PHONY: \
 	install \
@@ -15,6 +30,8 @@ DEPLOY_EMBEDDING_MODEL ?= false
 	deploy-notebooks \
 	apply-secrets \
 	build-images \
+	build-all-images \
+	push-all-images \
 	upload-pipelines \
 	upload-mlflow-assets \
 	run-adhoc-query \
@@ -168,32 +185,51 @@ apply-secrets:
 			-p "{\"stringData\":{\"MLFLOW_TRACKING_URI\":\"https://$(GATEWAY_HOST)/mlflow\"}}"; \
 	fi
 
-build-images:
+build-images: build-all-images push-all-images
+
+build-all-images:
 	@set -a && . $(ENV_FILE) && set +a && \
-	DATAGEN_IMG="$$KFP_IMAGE_REGISTRY/$$KFP_DATA_GENERATION_BASE_IMAGE_NAME:$$KFP_DATA_GENERATION_BASE_IMAGE_TAG" && \
-	INDEX_IMG="$$KFP_IMAGE_REGISTRY/$$KFP_INDEXING_BASE_IMAGE_NAME:$$KFP_INDEXING_BASE_IMAGE_TAG" && \
-	ANALYSIS_IMG="$$KFP_IMAGE_REGISTRY/$$KFP_ANALYSIS_BASE_IMAGE_NAME:$$KFP_ANALYSIS_BASE_IMAGE_TAG" && \
-	TOOLS_IMG="$$KFP_IMAGE_REGISTRY/$$KFP_PIPELINE_TOOLS_IMAGE_NAME:$$KFP_PIPELINE_TOOLS_IMAGE_TAG" && \
-	\
-	echo "==> Building data generation image..." && \
-	podman build -t "$$DATAGEN_IMG" resources/images/data-generation && \
-	echo "==> Pushing data generation image..." && \
-	podman push "$$DATAGEN_IMG" && \
-	\
-	echo "==> Building indexing image..." && \
-	podman build -t "$$INDEX_IMG" resources/images/data-indexing && \
-	echo "==> Pushing indexing image..." && \
-	podman push "$$INDEX_IMG" && \
-	\
-	echo "==> Building analysis image..." && \
-	podman build -t "$$ANALYSIS_IMG" resources/images/data-indexing && \
-	echo "==> Pushing analysis image..." && \
-	podman push "$$ANALYSIS_IMG" && \
-	\
-	echo "==> Building pipeline-tools image..." && \
-	podman build -t "$$TOOLS_IMG"  resources/images/pipeline-tools && \
-	echo "==> Pushing pipeline-tools image..." && \
-	podman push "$$TOOLS_IMG"
+	REGISTRY="$(REGISTRY)" && \
+	VERSION="$(VERSION)" && \
+	: "$${REGISTRY:=$$KFP_IMAGE_REGISTRY}" && \
+	DATAGEN_IMG="$$REGISTRY/$$KFP_DATA_GENERATION_BASE_IMAGE_NAME:$${VERSION:-$$KFP_DATA_GENERATION_BASE_IMAGE_TAG}" && \
+	INDEX_IMG="$$REGISTRY/$$KFP_INDEXING_BASE_IMAGE_NAME:$${VERSION:-$$KFP_INDEXING_BASE_IMAGE_TAG}" && \
+	ANALYSIS_IMG="$$REGISTRY/$$KFP_ANALYSIS_BASE_IMAGE_NAME:$${VERSION:-$$KFP_ANALYSIS_BASE_IMAGE_TAG}" && \
+	TOOLS_IMG="$$REGISTRY/$$KFP_PIPELINE_TOOLS_IMAGE_NAME:$${VERSION:-$$KFP_PIPELINE_TOOLS_IMAGE_TAG}" && \
+	echo "==> Building data generation image: $$DATAGEN_IMG" && \
+	$(IMAGE_BUILD) -t "$$DATAGEN_IMG" -f resources/images/data-generation/Containerfile resources/images/data-generation && \
+	echo "==> Building indexing image: $$INDEX_IMG" && \
+	$(IMAGE_BUILD) -t "$$INDEX_IMG" -f resources/images/data-indexing/Containerfile resources/images/data-indexing && \
+	if [ "$$ANALYSIS_IMG" = "$$INDEX_IMG" ]; then \
+		echo "==> Skipping analysis image build; it uses the indexing image."; \
+	else \
+		echo "==> Building analysis image: $$ANALYSIS_IMG" && \
+		$(IMAGE_BUILD) -t "$$ANALYSIS_IMG" -f resources/images/data-indexing/Containerfile resources/images/data-indexing; \
+	fi && \
+	echo "==> Building pipeline-tools image: $$TOOLS_IMG" && \
+	$(IMAGE_BUILD) -t "$$TOOLS_IMG" -f resources/images/pipeline-tools/Containerfile resources/images/pipeline-tools
+
+push-all-images:
+	@set -a && . $(ENV_FILE) && set +a && \
+	REGISTRY="$(REGISTRY)" && \
+	VERSION="$(VERSION)" && \
+	: "$${REGISTRY:=$$KFP_IMAGE_REGISTRY}" && \
+	DATAGEN_IMG="$$REGISTRY/$$KFP_DATA_GENERATION_BASE_IMAGE_NAME:$${VERSION:-$$KFP_DATA_GENERATION_BASE_IMAGE_TAG}" && \
+	INDEX_IMG="$$REGISTRY/$$KFP_INDEXING_BASE_IMAGE_NAME:$${VERSION:-$$KFP_INDEXING_BASE_IMAGE_TAG}" && \
+	ANALYSIS_IMG="$$REGISTRY/$$KFP_ANALYSIS_BASE_IMAGE_NAME:$${VERSION:-$$KFP_ANALYSIS_BASE_IMAGE_TAG}" && \
+	TOOLS_IMG="$$REGISTRY/$$KFP_PIPELINE_TOOLS_IMAGE_NAME:$${VERSION:-$$KFP_PIPELINE_TOOLS_IMAGE_TAG}" && \
+	echo "==> Pushing data generation image: $$DATAGEN_IMG" && \
+	$(IMAGE_PUSH) "$$DATAGEN_IMG" && \
+	echo "==> Pushing indexing image: $$INDEX_IMG" && \
+	$(IMAGE_PUSH) "$$INDEX_IMG" && \
+	if [ "$$ANALYSIS_IMG" = "$$INDEX_IMG" ]; then \
+		echo "==> Skipping analysis image push; it uses the indexing image."; \
+	else \
+		echo "==> Pushing analysis image: $$ANALYSIS_IMG" && \
+		$(IMAGE_PUSH) "$$ANALYSIS_IMG"; \
+	fi && \
+	echo "==> Pushing pipeline-tools image: $$TOOLS_IMG" && \
+	$(IMAGE_PUSH) "$$TOOLS_IMG"
 
 upload-pipelines:
 	@set -a && . $(ENV_FILE) && set +a && \
