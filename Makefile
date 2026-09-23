@@ -51,6 +51,7 @@ endif
 .PHONY: \
 	help \
 	help-all \
+	test-all \
 	install \
 	deploy-embedding-model \
 	deploy-notebooks \
@@ -108,6 +109,9 @@ help-all:
 	@echo "  deploy-notebooks            Deploy the data generation and indexing notebooks"
 	@echo "  apply-secrets               Create or update application secrets"
 	@echo "  deploy-otel                 Deploy OpenTelemetry and Tempo resources when available"
+	@echo ""
+	@echo "Testing:"
+	@echo "  test-all                    Run all test suites"
 	@echo ""
 	@echo "Container images:"
 	@echo "  build-images                Build and push all application images"
@@ -307,6 +311,14 @@ apply-secrets:
 			--type=merge \
 			-p "{\"stringData\":{\"MLFLOW_TRACKING_URI\":\"https://$(GATEWAY_HOST)/mlflow\"}}"; \
 	fi
+
+# ============================================================================
+# Testing
+# ============================================================================
+
+test-all:
+	@echo "==> Running UI tests..."
+	uv run --project ui --frozen pytest ui/tests
 
 # ============================================================================
 # Container images
