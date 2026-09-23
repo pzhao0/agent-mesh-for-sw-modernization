@@ -52,6 +52,8 @@ endif
 	help \
 	help-all \
 	test-all \
+	format \
+	lint \
 	install \
 	deploy-embedding-model \
 	deploy-notebooks \
@@ -112,6 +114,10 @@ help-all:
 	@echo ""
 	@echo "Testing:"
 	@echo "  test-all                    Run all test suites"
+	@echo ""
+	@echo "Utility commands:"
+	@echo "  format                      Format Python code with isort and Black"
+	@echo "  lint                        Check Python code with Flake8, Black, and isort"
 	@echo ""
 	@echo "Container images:"
 	@echo "  build-images                Build and push all application images"
@@ -319,6 +325,26 @@ apply-secrets:
 test-all:
 	@echo "==> Running UI tests..."
 	uv run --project ui --frozen pytest ui/tests
+
+# ============================================================================
+# Utility commands
+# ============================================================================
+
+format:
+	@echo "==> Sorting Python imports with isort..."
+	uv run --project ui --frozen isort .
+	@echo "==> Formatting Python code with Black..."
+	uv run --project ui --frozen black .
+	@echo "==> Formatting completed successfully."
+
+lint:
+	@echo "==> Running Flake8..."
+	uv run --project ui --frozen flake8 --max-line-length=99 --extend-ignore=E203,W503 .
+	@echo "==> Checking Python formatting with Black..."
+	uv run --project ui --frozen black --check --diff .
+	@echo "==> Checking Python import sorting with isort..."
+	uv run --project ui --frozen isort --check-only --diff .
+	@echo "==> Lint checks completed successfully."
 
 # ============================================================================
 # Container images

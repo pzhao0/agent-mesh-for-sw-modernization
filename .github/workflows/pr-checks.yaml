@@ -1,4 +1,4 @@
-name: Pull Request - Unit Tests
+name: Pull Request - Quality Checks & Unit Tests
 
 on:
   pull_request:
@@ -39,6 +39,9 @@ jobs:
         uses: astral-sh/setup-uv@v10
         with:
           version: ${{ env.UV_VERSION }}
+
+      - name: Run code quality checks
+        run: make lint
 
       - name: Run unit tests
         run: make test-all
