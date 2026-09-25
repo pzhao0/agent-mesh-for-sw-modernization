@@ -6,8 +6,11 @@
 
 ENV_FILE            	?= ./.env
 WORKBENCH_IMAGESTREAM_NAMESPACE ?= redhat-ods-applications
-GIT_REPO_URL        	:= $(shell git remote get-url origin 2>/dev/null | sed 's|^git@\([^:]*\):\(.*\)$$|https://\1/\2|')
-GIT_REPO_BRANCH     	:= $(shell git branch --show-current 2>/dev/null)
+# Fall back to origin and the local branch when no upstream is configured.
+GIT_LOCAL_BRANCH    	:= $(shell git branch --show-current 2>/dev/null)
+GIT_REPO_REMOTE     	:= $(or $(shell git config --get "branch.$(GIT_LOCAL_BRANCH).remote" 2>/dev/null),origin)
+GIT_REPO_URL        	:= $(shell git remote get-url "$(GIT_REPO_REMOTE)" 2>/dev/null | sed 's|^git@\([^:]*\):\(.*\)$$|https://\1/\2|')
+GIT_REPO_BRANCH     	:= $(or $(shell git config --get "branch.$(GIT_LOCAL_BRANCH).merge" 2>/dev/null | sed 's|^refs/heads/||'),$(GIT_LOCAL_BRANCH))
 CLUSTER_DOMAIN      	:= $(shell oc get ingress.config cluster -o jsonpath='{.spec.domain}' 2>/dev/null)
 GATEWAY_HOST        	:= $(shell oc get gateway data-science-gateway -n openshift-ingress -o jsonpath='{.status.addresses[0].value}' 2>/dev/null)
 PIPELINE_GIT_REPO   	?=
@@ -420,7 +423,6 @@ deploy-notebooks: prepare-workbench-images
 			--set imageStreams.namespace="$(WORKBENCH_IMAGESTREAM_NAMESPACE)" \
 			--set deployNotebooks=true
 
-# oc --from-env-file reads the file, not Make's exported defaults.
 apply-secrets:
 	@set -a && . $(ENV_FILE) && set +a && \
 	if [ "$(DEPLOY_EMBEDDING_MODEL)" = "true" ]; then \
