@@ -55,8 +55,6 @@ ASSET_LOADER                        ?= mlflow
 INSTALL_PREBUILT_INDEX              ?= true
 CUSTOM_EVALUATOR                    ?= mlflow
 OTEL_SERVICE_NAME                   ?= code-understanding
-OTEL_NAMESPACE                      ?= openshift-opentelemetry-operator
-OTEL_EXPORTER_OTLP_ENDPOINT         ?= http://code-understanding-collector.openshift-opentelemetry-operator.svc.cluster.local:4318
 OTEL_EXPORTER                       ?= otlp_http
 MLFLOW_TRACE_ENABLE_OTLP_DUAL_EXPORT ?= true
 OTEL_SEMCONV_STABILITY_OPT_IN       ?= genai
@@ -211,12 +209,13 @@ help-all:
 
 install:
 	@set -e; set -a; . $(ENV_FILE); set +a; \
+	OTEL_NAMESPACE=$${OTEL_NAMESPACE:-$$KFP_NAMESPACE}; \
 	\
 	echo "==> Creating namespaces..." && \
 	set -- agent-mesh-for-sw resources/helm \
 		--set "namespace=$$KFP_NAMESPACE" \
 		--set "requester=$$(oc whoami)"; \
-	if [ "$(DEPLOY_OTEL)" = "true" ] && [ -n "$${OTEL_NAMESPACE:-}" ]; then \
+	if [ "$(DEPLOY_OTEL)" = "true" ] && [ "$$OTEL_NAMESPACE" != "$$KFP_NAMESPACE" ]; then \
 		set -- "$$@" --set "otel.namespace=$$OTEL_NAMESPACE"; \
 	fi; \
 	helm template "$$@" -s templates/namespace.yaml | oc apply -f - && \
@@ -231,6 +230,7 @@ install:
 	$(MAKE) apply-secrets
 	@set -e; set -a; . $(ENV_FILE); set +a; \
 	: "$${KFP_IMAGE_REGISTRY:?KFP_IMAGE_REGISTRY must be set in $(ENV_FILE)}"; \
+	OTEL_NAMESPACE=$${OTEL_NAMESPACE:-$$KFP_NAMESPACE}; \
 	OTEL_ENABLED=false; \
 	set -- agent-mesh-for-sw resources/helm \
 		--namespace "$$KFP_NAMESPACE" \
@@ -309,6 +309,7 @@ uninstall:
 	@set -eu; \
 	set -a; . "$(ENV_FILE)"; set +a; \
 	: "$${KFP_NAMESPACE:?KFP_NAMESPACE must be set in $(ENV_FILE)}"; \
+	OTEL_NAMESPACE=$${OTEL_NAMESPACE:-$$KFP_NAMESPACE}; \
 	case "$$KFP_NAMESPACE" in default|kube-*|openshift-*|redhat-ods-applications) \
 		echo "Error: refusing to uninstall from protected namespace: $$KFP_NAMESPACE" >&2; exit 1;; \
 	esac; \
@@ -425,6 +426,9 @@ deploy-notebooks: prepare-workbench-images
 
 apply-secrets:
 	@set -a && . $(ENV_FILE) && set +a && \
+	OTEL_NAMESPACE=$${OTEL_NAMESPACE:-$$KFP_NAMESPACE} && \
+	OTEL_EXPORTER_OTLP_ENDPOINT=$${OTEL_EXPORTER_OTLP_ENDPOINT:-http://$$OTEL_SERVICE_NAME-collector.$$OTEL_NAMESPACE.svc.cluster.local:4318} && \
+	export OTEL_NAMESPACE OTEL_EXPORTER_OTLP_ENDPOINT && \
 	if [ "$(DEPLOY_EMBEDDING_MODEL)" = "true" ]; then \
 		: "$${EMBED_LLM_TOKEN:=dummy}"; \
 		: "$${EMBED_LLM_API_BASE:=http://e5-mistral:8000/v1}"; \
@@ -703,6 +707,7 @@ run-pipelines:
 
 deploy-otel:
 	@set -a && . $(ENV_FILE) && set +a && \
+	OTEL_NAMESPACE=$${OTEL_NAMESPACE:-$$KFP_NAMESPACE} && \
 	\
 	[ -n "$$OTEL_SERVICE_NAME" ] || { echo "Error: OTEL_SERVICE_NAME is not set in $(ENV_FILE)."; exit 1; } && \
 	[ -n "$$OTEL_NAMESPACE" ] || { echo "Error: OTEL_NAMESPACE is not set in $(ENV_FILE)."; exit 1; } && \
@@ -719,8 +724,10 @@ deploy-otel:
 		exit 0; \
 	fi && \
 	\
-	echo "==> Creating OTel namespace $$OTEL_NAMESPACE..." && \
-	oc create namespace $$OTEL_NAMESPACE --dry-run=client -o yaml | oc apply -f - && \
+	if [ "$$OTEL_NAMESPACE" != "$$KFP_NAMESPACE" ]; then \
+		echo "==> Creating OTel namespace $$OTEL_NAMESPACE..."; \
+		oc create namespace $$OTEL_NAMESPACE --dry-run=client -o yaml | oc apply -f -; \
+	fi && \
 	\
 	echo "==> Waiting for MinIO to be ready..." && \
 	oc wait deployment/minio -n $$KFP_NAMESPACE --for=condition=Available --timeout=120s && \
