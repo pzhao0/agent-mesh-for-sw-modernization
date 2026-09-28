@@ -1,6 +1,6 @@
 {{- if .Values.otel.enabled }}
 ---
-# S3 credentials for TempoStack → MinIO
+# S3 credentials mirrored into the Tempo namespace for TempoStack → S4.
 apiVersion: v1
 kind: Secret
 metadata:
@@ -8,10 +8,10 @@ metadata:
   namespace: {{ .Values.otel.namespace }}
 type: Opaque
 stringData:
-  endpoint: {{ .Values.minio.endpoint }}
+  endpoint: http://s4.{{ .Values.namespace }}.svc.cluster.local:7480
   bucket: {{ .Values.otel.tempo.bucket }}
-  access_key_id: {{ .Values.minio.rootUser | quote }}
-  access_key_secret: {{ .Values.minio.rootPassword | quote }}
+  access_key_id: {{ .Values.s4.s3.accessKeyId | quote }}
+  access_key_secret: {{ .Values.s4.s3.secretAccessKey | quote }}
 ---
 apiVersion: tempo.grafana.com/v1alpha1
 kind: TempoStack

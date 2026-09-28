@@ -10,6 +10,7 @@ Contents
   - [Preparing the Environment](#preparing-the-environment)
   - [(Optional) Building the Container Images](#optional-building-the-container-images)
   - [Installing via Makefile](#installing-via-makefile)
+  - [S4 Object Storage](#s4-object-storage)
   - [Uninstalling](#uninstalling)
 - [Running the Code Understanding Workflow](#running-the-code-understanding-workflow)
 - [Running Adhoc Queries](#running-adhoc-queries)
@@ -39,6 +40,7 @@ Understanding** and **Code Migration**. This repository demonstrates the **Code 
 - Red Hat OpenShift AI 2.22+
 - 1X NVIDIA H200 GPU, 1X NVIDIA H100 GPU, 1X NVIDIA L40S GPU
 - 8+ vCPUs / 24+ GiB RAM
+- A default StorageClass capable of provisioning a 200 GiB ReadWriteOnce PVC for object storage
 - MLflow (assumes Openshift AI 3.4+) [Installation](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/working_with_mlflow/installing-mlflow_mlflow)
 - Openshift AI Model Registry [Installation](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/2.25/html-single/enabling_the_model_registry_component/index)
 - Openshift AI Model Catalog [Installation](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html-single/working_with_the_model_catalog/index)
@@ -80,6 +82,25 @@ Ensure that you have access to OpenAI-compatible endpoints for the following mod
 
 OpenTelemetry and Tempo are optional and disabled by default. To deploy them as
 part of installation, run `make install DEPLOY_OTEL=true`.
+
+### S4 Object Storage
+
+The Helm release deploys [S4 (Super Simple Storage
+Service)](https://github.com/rh-aiservices-bu/s4) as its S3-compatible object
+store. The pipeline server connects to the internal endpoint
+`http://s4:7480` using the `s4-credentials` Secret. The S3 API is not exposed
+outside the cluster.
+
+Set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `S4_UI_USERNAME`, and
+`S4_UI_PASSWORD` in `.env` before installation. `make install` enables the S4
+web UI Route on port 5000 with authentication. Find the `s4` Route in the
+OpenShift console under **Networking → Routes**.
+
+A regular bootstrap Job waits for S4 and creates the application bucket from
+`AWS_S3_BUCKET` plus the `demopipelines` pipeline bucket. When OpenTelemetry is
+enabled, it also creates the `tempo` bucket. The pipeline and Tempo bucket names
+can be changed through `pipelineStorage.bucket` and `otel.tempo.bucket` in
+`resources/helm/values.yaml`.
 
 ### Uninstalling
 

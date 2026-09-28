@@ -17,13 +17,41 @@ imageStreams:
 repoUrl: ""
 repoRef: main
 
-minio:
-  rootUser: ""
-  rootPassword: ""
-  bucket: demo
-  region: us-east-1
-  image: "quay.io/minio/minio:latest"
-  mcImage: "quay.io/minio/mc:latest"
+s4:
+  enabled: true
+  fullnameOverride: s4
+  image:
+    repository: quay.io/rh-aiservices-bu/s4
+    tag: "0.3.2"
+    pullPolicy: IfNotPresent
+  s3:
+    accessKeyId: ""
+    secretAccessKey: ""
+    region: us-east-1
+  # The Makefile enables authentication and supplies credentials at install time.
+  auth:
+    enabled: false
+    username: ""
+    password: ""
+  route:
+    enabled: false
+    s3Api:
+      enabled: false
+  storage:
+    data:
+      size: 200Gi
+
+pipelineStorage:
+  bucket: demopipelines
+
+applicationStorage:
+  bucket: data
+
+s4Buckets:
+  create: true
+
+jobImages:
+  python: registry.redhat.io/ubi9/python-311:latest
 
 dataGeneration:
   image:
@@ -83,7 +111,6 @@ otel:
   enabled: false
   namespace: ""
   name: ""
-  createBucket: false
   tempo:
     bucket: tempo
     storageSize: 10Gi
