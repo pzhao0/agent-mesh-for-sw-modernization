@@ -33,10 +33,7 @@ VERSION               ?=
 
 # Defaults for values omitted from .env. Sourcing .env in each recipe lets
 # configured values override these defaults.
-AWS_ACCESS_KEY_ID                  ?= minioadmin
-AWS_SECRET_ACCESS_KEY              ?= minioadmin123
 AWS_S3_BUCKET                      ?= data
-MINIO_IMAGE                        ?= quay.io/minio/minio:latest
 GIT_REPO                           ?= https://github.com/agapebondservant/tic-tac-toe-sample
 GIT_BRANCH                         ?= main
 GIT_REPO_LIST                      ?= workflows/examples/code_understanding/assets/repos/repo_list.json
@@ -64,7 +61,7 @@ MLFLOW_TRACE_ENABLE_OTLP_DUAL_EXPORT ?= true
 OTEL_SEMCONV_STABILITY_OPT_IN       ?= genai
 
 DEFAULTED_ENV_VARS := \
-	AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_S3_BUCKET MINIO_IMAGE \
+	AWS_S3_BUCKET \
 	GIT_REPO GIT_BRANCH GIT_REPO_LIST KFP_IMAGE_REGISTRY \
 	KFP_DATA_GENERATION_BASE_IMAGE_NAME KFP_INDEXING_BASE_IMAGE_NAME \
 	KFP_ANALYSIS_BASE_IMAGE_NAME KFP_PIPELINE_TOOLS_IMAGE_NAME \
