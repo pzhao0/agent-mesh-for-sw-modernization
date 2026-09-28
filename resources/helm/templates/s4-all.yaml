@@ -1,0 +1,237 @@
+# S4 v0.3.2 deployment, adapted from the upstream S4 Helm chart.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: s4
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: s4
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: object-storage
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: s4-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: s4
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: object-storage
+data:
+  AWS_S3_ENDPOINT: "http://localhost:7480"
+  AWS_DEFAULT_REGION: {{ .Values.objectStorage.region | quote }}
+  LOCAL_STORAGE_PATHS: ""
+  MAX_CONCURRENT_TRANSFERS: {{ .Values.s4.maxConcurrentTransfers | quote }}
+  MAX_FILE_SIZE_GB: {{ .Values.s4.maxFileSizeGB | quote }}
+  PORT: "5000"
+  IP: "0.0.0.0"
+  {{- if .Values.s4.auth.enabled }}
+  JWT_EXPIRATION_HOURS: "8"
+  {{- end }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: s4-credentials
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: s4
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: object-storage
+type: Opaque
+stringData:
+  AWS_ACCESS_KEY_ID: {{ .Values.objectStorage.accessKeyId | quote }}
+  AWS_SECRET_ACCESS_KEY: {{ .Values.objectStorage.secretAccessKey | quote }}
+  {{- if .Values.s4.auth.enabled }}
+  UI_USERNAME: {{ .Values.objectStorage.accessKeyId | quote }}
+  UI_PASSWORD: {{ .Values.objectStorage.secretAccessKey | quote }}
+  {{- if .Values.s4.auth.jwtSecret }}
+  JWT_SECRET: {{ .Values.s4.auth.jwtSecret | quote }}
+  {{- end }}
+  {{- end }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: s4-data
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: s4
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: object-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  volumeMode: Filesystem
+  resources:
+    requests:
+      storage: {{ .Values.s4.storageSize }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: s4
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: s4
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: object-storage
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: s4
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: s4
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: object-storage
+      annotations:
+        checksum/config: {{ printf "%s|%s|%s|%s" .Values.objectStorage.region .Values.s4.maxConcurrentTransfers .Values.s4.maxFileSizeGB (toString .Values.s4.auth.enabled) | sha256sum }}
+        checksum/secret: {{ printf "%s|%s|%s" .Values.objectStorage.accessKeyId .Values.objectStorage.secretAccessKey .Values.s4.auth.jwtSecret | sha256sum }}
+    spec:
+      serviceAccountName: s4
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: s4
+          image: {{ .Values.s4.image | quote }}
+          imagePullPolicy: {{ .Values.s4.imagePullPolicy }}
+          # Upstream's entrypoint prints the RGW user response, including the
+          # secret key, on first startup. Keep its startup sequence while
+          # suppressing only that credential-bearing command output.
+          command:
+            - /bin/bash
+            - -ec
+          args:
+            - |
+              mkdir -p /var/lib/ceph/radosgw/{db,buckets,tmp}
+              mkdir -p /var/lib/ceph/radosgw/db/rgw_posix_lmdbs
+              radosgw-admin user create \
+                --uid s4admin \
+                --display-name "S4 Admin" \
+                --access-key "${AWS_ACCESS_KEY_ID:-s4admin}" \
+                --secret-key "${AWS_SECRET_ACCESS_KEY:-s4secret}" >/dev/null 2>&1 || true
+              exec /usr/bin/supervisord -c /etc/supervisord.conf
+          ports:
+            - name: s3-api
+              containerPort: 7480
+              protocol: TCP
+            - name: web-ui
+              containerPort: 5000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: s4-config
+            - secretRef:
+                name: s4-credentials
+          volumeMounts:
+            - name: s4-data
+              mountPath: /var/lib/ceph/radosgw
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          readinessProbe:
+            httpGet:
+              path: /api
+              port: web-ui
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api
+              port: web-ui
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+      volumes:
+        - name: s4-data
+          persistentVolumeClaim:
+            claimName: s4-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: s4
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: s4
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: object-storage
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: s4
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: s3-api
+      port: 7480
+      targetPort: s3-api
+      protocol: TCP
+    - name: web-ui
+      port: 5000
+      targetPort: web-ui
+      protocol: TCP
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: s4
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: s4
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: object-storage
+spec:
+  to:
+    kind: Service
+    name: s4
+    weight: 100
+  port:
+    targetPort: web-ui
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: s4-api
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: s4
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: object-storage
+spec:
+  to:
+    kind: Service
+    name: s4
+    weight: 100
+  port:
+    targetPort: s3-api
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

@@ -191,7 +191,7 @@ install:
 	$(MAKE) apply-secrets
 	@set -e; set -a; . $(ENV_FILE); set +a; \
 	: "$${KFP_IMAGE_REGISTRY:?KFP_IMAGE_REGISTRY must be set in $(ENV_FILE)}"; \
-	OTEL_ENABLED=false; \
+	S4_IMAGE="$${S4_IMAGE:-quay.io/rh-aiservices-bu/s4:0.3.2}"; \
 	set -- agent-mesh-for-sw resources/helm \
 		--namespace "$$KFP_NAMESPACE" \
 		--create-namespace \
@@ -201,9 +201,10 @@ install:
 		--set "requester=$$(oc whoami)" \
 		--set "repoUrl=$(GIT_REPO_URL)" \
 		--set "repoRef=$(GIT_REPO_BRANCH)" \
-		--set "minio.rootUser=$$AWS_ACCESS_KEY_ID" \
-		--set "minio.rootPassword=$$AWS_SECRET_ACCESS_KEY" \
-		--set "minio.image=$$MINIO_IMAGE" \
+		--set-string "objectStorage.accessKeyId=$$AWS_ACCESS_KEY_ID" \
+		--set-string "objectStorage.secretAccessKey=$$AWS_SECRET_ACCESS_KEY" \
+		--set-string "s4.image=$$S4_IMAGE" \
+		--set s4.auth.enabled=true \
 		--set "dataGeneration.image.registry=$$KFP_IMAGE_REGISTRY" \
 		--set "dataGeneration.image.name=$$KFP_DATA_GENERATION_BASE_IMAGE_NAME" \
 		--set "dataGeneration.image.tag=$$KFP_DATA_GENERATION_BASE_IMAGE_TAG" \
@@ -222,34 +223,33 @@ install:
 		--set imageStreams.enabled=false \
 		--set deployNotebooks=true \
 		--set otel.enabled=false; \
+	if [ -n "$${S4_JWT_SECRET:-}" ]; then \
+		set -- "$$@" --set-string "s4.auth.jwtSecret=$$S4_JWT_SECRET"; \
+	fi; \
 	if [ "$(DEPLOY_OTEL)" = "true" ] && \
 	   [ -n "$${OTEL_NAMESPACE:-}" ] && [ -n "$${OTEL_SERVICE_NAME:-}" ] && \
 	   oc get crd opentelemetrycollectors.opentelemetry.io >/dev/null 2>&1 && \
 	   oc get crd tempostacks.tempo.grafana.com >/dev/null 2>&1; then \
-		OTEL_ENABLED=true; \
 		set -- "$$@" \
 			--set otel.enabled=true \
 			--set "otel.namespace=$$OTEL_NAMESPACE" \
-			--set "otel.name=$$OTEL_SERVICE_NAME" \
-			--set "minio.endpoint=http://minio-service.$$KFP_NAMESPACE.svc.cluster.local:9000"; \
+			--set "otel.name=$$OTEL_SERVICE_NAME"; \
 	fi; \
 	echo "==> Installing Agent Mesh Helm release..."; \
 	helm upgrade --install "$$@"; \
-	if [ "$$OTEL_ENABLED" = true ]; then \
-		echo "==> Creating Tempo S3 bucket..."; \
-		oc wait deployment/minio -n $$KFP_NAMESPACE --for=condition=Available --timeout=120s; \
-		oc delete job create-tempo-bucket -n $$OTEL_NAMESPACE --ignore-not-found=true; \
-		helm template agent-mesh-for-sw resources/helm \
-			--set "namespace=$$KFP_NAMESPACE" \
-			--set "otel.namespace=$$OTEL_NAMESPACE" \
-			--set otel.createBucket=true \
-			--set "minio.endpoint=http://minio-service.$$KFP_NAMESPACE.svc.cluster.local:9000" \
-			--set "minio.rootUser=$$AWS_ACCESS_KEY_ID" \
-			--set "minio.rootPassword=$$AWS_SECRET_ACCESS_KEY" \
-			-s templates/create-tempo-bucket-job.yaml | oc apply -f -; \
-		oc wait job/create-tempo-bucket -n $$OTEL_NAMESPACE --for=condition=complete --timeout=120s; \
-		oc delete job create-tempo-bucket -n $$OTEL_NAMESPACE --ignore-not-found=true; \
-	fi; \
+	echo "==> Waiting for S4 to be ready..."; \
+	oc wait deployment/s4 -n $$KFP_NAMESPACE --for=condition=Available --timeout=180s; \
+	echo "==> Creating object storage buckets..."; \
+	oc delete job create-object-storage-buckets -n $$KFP_NAMESPACE --ignore-not-found=true; \
+	helm template agent-mesh-for-sw resources/helm \
+		--set "namespace=$$KFP_NAMESPACE" \
+		--set objectStorage.createBuckets=true \
+		--set-string "objectStorage.accessKeyId=$$AWS_ACCESS_KEY_ID" \
+		--set-string "objectStorage.secretAccessKey=$$AWS_SECRET_ACCESS_KEY" \
+		--set-string "s4.image=$$S4_IMAGE" \
+		-s templates/create-object-storage-buckets-job.yaml | oc apply -f -; \
+	oc wait job/create-object-storage-buckets -n $$KFP_NAMESPACE --for=condition=complete --timeout=180s; \
+	oc delete job create-object-storage-buckets -n $$KFP_NAMESPACE --ignore-not-found=true; \
 	echo "==> Waiting for pipeline server..."; \
 	until oc get deployment ds-pipeline-dspa -n $$KFP_NAMESPACE >/dev/null 2>&1; do sleep 5; done; \
 	oc wait deployment/ds-pipeline-dspa -n $$KFP_NAMESPACE --for=condition=Available --timeout=300s
@@ -655,6 +655,7 @@ deploy-otel:
 	\
 	[ -n "$$OTEL_SERVICE_NAME" ] || { echo "Error: OTEL_SERVICE_NAME is not set in $(ENV_FILE)."; exit 1; } && \
 	[ -n "$$OTEL_NAMESPACE" ] || { echo "Error: OTEL_NAMESPACE is not set in $(ENV_FILE)."; exit 1; } && \
+	S4_IMAGE="$${S4_IMAGE:-quay.io/rh-aiservices-bu/s4:0.3.2}" && \
 	\
 	echo "==> Checking for OpenTelemetry and Tempo CRDs..." && \
 	if ! oc get crd opentelemetrycollectors.opentelemetry.io >/dev/null 2>&1 || \
@@ -671,21 +672,20 @@ deploy-otel:
 	echo "==> Creating OTel namespace $$OTEL_NAMESPACE..." && \
 	oc create namespace $$OTEL_NAMESPACE --dry-run=client -o yaml | oc apply -f - && \
 	\
-	echo "==> Waiting for MinIO to be ready..." && \
-	oc wait deployment/minio -n $$KFP_NAMESPACE --for=condition=Available --timeout=120s && \
+	echo "==> Waiting for S4 to be ready..." && \
+	oc wait deployment/s4 -n $$KFP_NAMESPACE --for=condition=Available --timeout=180s && \
 	\
-	echo "==> Creating Tempo S3 bucket..." && \
-	oc delete job create-tempo-bucket -n $$OTEL_NAMESPACE --ignore-not-found=true && \
+	echo "==> Ensuring object storage buckets exist..." && \
+	oc delete job create-object-storage-buckets -n $$KFP_NAMESPACE --ignore-not-found=true && \
 	helm template agent-mesh-for-sw resources/helm \
 		--set namespace=$$KFP_NAMESPACE \
-		--set otel.namespace=$$OTEL_NAMESPACE \
-		--set otel.createBucket=true \
-		--set minio.endpoint=http://minio-service.$$KFP_NAMESPACE.svc.cluster.local:9000 \
-		--set minio.rootUser=$$AWS_ACCESS_KEY_ID \
-		--set minio.rootPassword=$$AWS_SECRET_ACCESS_KEY \
-		-s templates/create-tempo-bucket-job.yaml | oc apply -f - && \
-	oc wait job/create-tempo-bucket -n $$OTEL_NAMESPACE --for=condition=complete --timeout=120s && \
-	oc delete job create-tempo-bucket -n $$OTEL_NAMESPACE --ignore-not-found=true && \
+		--set objectStorage.createBuckets=true \
+		--set-string objectStorage.accessKeyId=$$AWS_ACCESS_KEY_ID \
+		--set-string objectStorage.secretAccessKey=$$AWS_SECRET_ACCESS_KEY \
+		--set-string s4.image=$$S4_IMAGE \
+		-s templates/create-object-storage-buckets-job.yaml | oc apply -f - && \
+	oc wait job/create-object-storage-buckets -n $$KFP_NAMESPACE --for=condition=complete --timeout=180s && \
+	oc delete job/create-object-storage-buckets -n $$KFP_NAMESPACE --ignore-not-found=true && \
 	\
 	echo "==> Deploying TempoStack and OpenTelemetry Collector..." && \
 	helm upgrade agent-mesh-for-sw resources/helm \
@@ -694,9 +694,8 @@ deploy-otel:
 		--no-hooks \
 		--set namespace="$$KFP_NAMESPACE" \
 		--set otel.namespace=$$OTEL_NAMESPACE \
-		--set minio.endpoint=http://minio-service.$$KFP_NAMESPACE.svc.cluster.local:9000 \
-		--set minio.rootUser=$$AWS_ACCESS_KEY_ID \
-		--set minio.rootPassword=$$AWS_SECRET_ACCESS_KEY \
+		--set-string objectStorage.accessKeyId=$$AWS_ACCESS_KEY_ID \
+		--set-string objectStorage.secretAccessKey=$$AWS_SECRET_ACCESS_KEY \
 		--set otel.enabled=true \
 		--set otel.name=$$OTEL_SERVICE_NAME
 

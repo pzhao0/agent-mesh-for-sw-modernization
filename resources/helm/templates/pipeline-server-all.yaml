@@ -6,8 +6,8 @@ metadata:
   namespace: {{ .Values.namespace }}
 type: Opaque
 stringData:
-  AWS_ACCESS_KEY_ID: {{ .Values.minio.rootUser }}
-  AWS_SECRET_ACCESS_KEY: {{ .Values.minio.rootPassword }}
+  AWS_ACCESS_KEY_ID: {{ .Values.objectStorage.accessKeyId | quote }}
+  AWS_SECRET_ACCESS_KEY: {{ .Values.objectStorage.secretAccessKey | quote }}
 ---
 apiVersion: datasciencepipelinesapplications.opendatahub.io/v1
 kind: DataSciencePipelinesApplication
@@ -35,12 +35,12 @@ spec:
     disableHealthCheck: false
     enableExternalRoute: false
     externalStorage:
-      host: minio-api-{{ .Values.namespace }}.{{ .Values.clusterDomain }}
+      host: s4-api-{{ .Values.namespace }}.{{ .Values.clusterDomain }}
       port: "443"
       scheme: https
       secure: true
-      region: {{ .Values.minio.region }}
-      bucket: {{ .Values.minio.bucket }}pipelines
+      region: {{ .Values.objectStorage.region }}
+      bucket: {{ .Values.objectStorage.pipelineBucket }}
       s3CredentialsSecret:
         accessKey: AWS_ACCESS_KEY_ID
         secretKey: AWS_SECRET_ACCESS_KEY

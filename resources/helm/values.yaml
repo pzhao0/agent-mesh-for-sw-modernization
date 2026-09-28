@@ -17,13 +17,22 @@ imageStreams:
 repoUrl: ""
 repoRef: main
 
-minio:
-  rootUser: ""
-  rootPassword: ""
-  bucket: demo
+objectStorage:
+  accessKeyId: ""
+  secretAccessKey: ""
   region: us-east-1
-  image: "quay.io/minio/minio:latest"
-  mcImage: "quay.io/minio/mc:latest"
+  pipelineBucket: demopipelines
+  createBuckets: false
+
+s4:
+  image: "quay.io/rh-aiservices-bu/s4:0.3.2"
+  imagePullPolicy: IfNotPresent
+  storageSize: 200Gi
+  maxFileSizeGB: "20"
+  maxConcurrentTransfers: "2"
+  auth:
+    enabled: false
+    jwtSecret: ""
 
 dataGeneration:
   image:
@@ -83,7 +92,6 @@ otel:
   enabled: false
   namespace: ""
   name: ""
-  createBucket: false
   tempo:
     bucket: tempo
     storageSize: 10Gi
