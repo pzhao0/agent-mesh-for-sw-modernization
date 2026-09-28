@@ -3,3 +3,9 @@ name: agent-mesh
 description: Agent Mesh for Software Modernization - Code Understanding
 type: application
 version: 0.1.0
+dependencies:
+  # S4 vendored from rh-aiservices-bu/s4 @ 797911c (chart 0.1.0, app 0.3.2)
+  - name: s4
+    version: 0.1.0
+    repository: "file://charts/s4"
+    condition: s4.enabled

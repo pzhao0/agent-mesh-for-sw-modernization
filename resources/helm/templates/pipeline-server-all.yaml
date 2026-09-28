@@ -1,14 +1,3 @@
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: dashboard-dspa-secret
-  namespace: {{ .Values.namespace }}
-type: Opaque
-stringData:
-  AWS_ACCESS_KEY_ID: {{ .Values.minio.rootUser }}
-  AWS_SECRET_ACCESS_KEY: {{ .Values.minio.rootPassword }}
----
 apiVersion: datasciencepipelinesapplications.opendatahub.io/v1
 kind: DataSciencePipelinesApplication
 metadata:
@@ -35,16 +24,16 @@ spec:
     disableHealthCheck: false
     enableExternalRoute: false
     externalStorage:
-      host: minio-api-{{ .Values.namespace }}.{{ .Values.clusterDomain }}
-      port: "443"
-      scheme: https
-      secure: true
-      region: {{ .Values.minio.region }}
-      bucket: {{ .Values.minio.bucket }}pipelines
+      host: s4.{{ .Values.namespace }}.svc.cluster.local
+      port: "7480"
+      scheme: http
+      secure: false
+      region: {{ .Values.s4.s3.region }}
+      bucket: {{ .Values.pipelineStorage.bucket }}
       s3CredentialsSecret:
         accessKey: AWS_ACCESS_KEY_ID
         secretKey: AWS_SECRET_ACCESS_KEY
-        secretName: dashboard-dspa-secret
+        secretName: s4-credentials
   persistenceAgent:
     deploy: true
     numWorkers: 2

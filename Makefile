@@ -5,6 +5,11 @@
 .DEFAULT_GOAL := install
 
 ENV_FILE            	?= ./.env
+RELEASE               ?= agent-mesh-for-sw
+CHART_DIR             ?= resources/helm
+NAMESPACE             ?=
+VERIFY_TIMEOUT        ?= 10m
+PIPELINE_VERIFY_TIMEOUT ?= 7200
 WORKBENCH_IMAGESTREAM_NAMESPACE ?= redhat-ods-applications
 GIT_REPO_URL        	:= $(shell git remote get-url origin 2>/dev/null | sed 's|^git@\([^:]*\):\(.*\)$$|https://\1/\2|')
 GIT_REPO_BRANCH     	:= $(shell git branch --show-current 2>/dev/null)
@@ -56,6 +61,11 @@ endif
 .PHONY: \
 	help \
 	help-all \
+	helm-lint \
+	helm-template \
+	verify-secrets \
+	verify-deploy \
+	verify-primary-flow \
 	test-all \
 	format \
 	lint \
@@ -120,6 +130,11 @@ help-all:
 	@echo ""
 	@echo "Testing:"
 	@echo "  test-all                    Run all test suites"
+	@echo "  helm-lint                   Lint the deployment chart"
+	@echo "  helm-template               Render the deployment chart"
+	@echo "  verify-secrets              Check tracked files for committed secrets"
+	@echo "  verify-deploy               Verify the installed release and health endpoints"
+	@echo "  verify-primary-flow         Wait for the latest single-repository pipeline run"
 	@echo ""
 	@echo "Utility commands:"
 	@echo "  format                      Format Python code with isort and Black"
@@ -171,6 +186,11 @@ help-all:
 
 install:
 	@set -e; set -a; . $(ENV_FILE); set +a; \
+	: "$${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID must be set in $(ENV_FILE)}"; \
+	: "$${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY must be set in $(ENV_FILE)}"; \
+	: "$${AWS_S3_BUCKET:?AWS_S3_BUCKET must be set in $(ENV_FILE)}"; \
+	: "$${S4_UI_USERNAME:?S4_UI_USERNAME must be set in $(ENV_FILE)}"; \
+	: "$${S4_UI_PASSWORD:?S4_UI_PASSWORD must be set in $(ENV_FILE)}"; \
 	\
 	echo "==> Creating namespaces..." && \
 	set -- agent-mesh-for-sw resources/helm \
@@ -191,7 +211,6 @@ install:
 	$(MAKE) apply-secrets
 	@set -e; set -a; . $(ENV_FILE); set +a; \
 	: "$${KFP_IMAGE_REGISTRY:?KFP_IMAGE_REGISTRY must be set in $(ENV_FILE)}"; \
-	OTEL_ENABLED=false; \
 	set -- agent-mesh-for-sw resources/helm \
 		--namespace "$$KFP_NAMESPACE" \
 		--create-namespace \
@@ -201,9 +220,13 @@ install:
 		--set "requester=$$(oc whoami)" \
 		--set "repoUrl=$(GIT_REPO_URL)" \
 		--set "repoRef=$(GIT_REPO_BRANCH)" \
-		--set "minio.rootUser=$$AWS_ACCESS_KEY_ID" \
-		--set "minio.rootPassword=$$AWS_SECRET_ACCESS_KEY" \
-		--set "minio.image=$$MINIO_IMAGE" \
+		--set-string "s4.s3.accessKeyId=$$AWS_ACCESS_KEY_ID" \
+		--set-string "s4.s3.secretAccessKey=$$AWS_SECRET_ACCESS_KEY" \
+		--set-string "applicationStorage.bucket=$$AWS_S3_BUCKET" \
+		--set s4.auth.enabled=true \
+		--set-string "s4.auth.username=$$S4_UI_USERNAME" \
+		--set-string "s4.auth.password=$$S4_UI_PASSWORD" \
+		--set s4.route.enabled=true \
 		--set "dataGeneration.image.registry=$$KFP_IMAGE_REGISTRY" \
 		--set "dataGeneration.image.name=$$KFP_DATA_GENERATION_BASE_IMAGE_NAME" \
 		--set "dataGeneration.image.tag=$$KFP_DATA_GENERATION_BASE_IMAGE_TAG" \
@@ -226,30 +249,13 @@ install:
 	   [ -n "$${OTEL_NAMESPACE:-}" ] && [ -n "$${OTEL_SERVICE_NAME:-}" ] && \
 	   oc get crd opentelemetrycollectors.opentelemetry.io >/dev/null 2>&1 && \
 	   oc get crd tempostacks.tempo.grafana.com >/dev/null 2>&1; then \
-		OTEL_ENABLED=true; \
 		set -- "$$@" \
 			--set otel.enabled=true \
 			--set "otel.namespace=$$OTEL_NAMESPACE" \
-			--set "otel.name=$$OTEL_SERVICE_NAME" \
-			--set "minio.endpoint=http://minio-service.$$KFP_NAMESPACE.svc.cluster.local:9000"; \
+			--set "otel.name=$$OTEL_SERVICE_NAME"; \
 	fi; \
 	echo "==> Installing Agent Mesh Helm release..."; \
 	helm upgrade --install "$$@"; \
-	if [ "$$OTEL_ENABLED" = true ]; then \
-		echo "==> Creating Tempo S3 bucket..."; \
-		oc wait deployment/minio -n $$KFP_NAMESPACE --for=condition=Available --timeout=120s; \
-		oc delete job create-tempo-bucket -n $$OTEL_NAMESPACE --ignore-not-found=true; \
-		helm template agent-mesh-for-sw resources/helm \
-			--set "namespace=$$KFP_NAMESPACE" \
-			--set "otel.namespace=$$OTEL_NAMESPACE" \
-			--set otel.createBucket=true \
-			--set "minio.endpoint=http://minio-service.$$KFP_NAMESPACE.svc.cluster.local:9000" \
-			--set "minio.rootUser=$$AWS_ACCESS_KEY_ID" \
-			--set "minio.rootPassword=$$AWS_SECRET_ACCESS_KEY" \
-			-s templates/create-tempo-bucket-job.yaml | oc apply -f -; \
-		oc wait job/create-tempo-bucket -n $$OTEL_NAMESPACE --for=condition=complete --timeout=120s; \
-		oc delete job create-tempo-bucket -n $$OTEL_NAMESPACE --ignore-not-found=true; \
-	fi; \
 	echo "==> Waiting for pipeline server..."; \
 	until oc get deployment ds-pipeline-dspa -n $$KFP_NAMESPACE >/dev/null 2>&1; do sleep 5; done; \
 	oc wait deployment/ds-pipeline-dspa -n $$KFP_NAMESPACE --for=condition=Available --timeout=300s
@@ -427,6 +433,95 @@ apply-secrets:
 # Testing
 # ============================================================================
 
+helm-lint:
+	helm dependency build $(CHART_DIR)
+	helm lint $(CHART_DIR)
+
+helm-template:
+	@set -a; [ ! -f "$(ENV_FILE)" ] || . "$(ENV_FILE)"; set +a; \
+	VERIFY_NAMESPACE="$(NAMESPACE)"; \
+	: "$${VERIFY_NAMESPACE:=$${KFP_NAMESPACE:-demo}}"; \
+	helm template $(RELEASE) $(CHART_DIR) \
+		--namespace "$$VERIFY_NAMESPACE" \
+		--set-string "namespace=$$VERIFY_NAMESPACE"
+
+verify-secrets:
+	@if git grep -nE '(AWS_SECRET_ACCESS_KEY|S4_UI_PASSWORD|GIT_TOKEN|[A-Z0-9_]+_(API_KEY|TOKEN))=[^<[:space:]"$$]' \
+		-- ':!.env.template'; then \
+		echo "Error: possible plaintext secret found in a tracked file." >&2; \
+		exit 1; \
+	fi
+	@echo "Tracked-file secret scan passed."
+
+verify-deploy: verify-secrets
+	@set -eu; set -a; . "$(ENV_FILE)"; set +a; \
+	VERIFY_NAMESPACE="$(NAMESPACE)"; \
+	: "$${VERIFY_NAMESPACE:=$${KFP_NAMESPACE:-}}"; \
+	: "$${VERIFY_NAMESPACE:?Set NAMESPACE or KFP_NAMESPACE in $(ENV_FILE)}"; \
+	echo "==> Verifying Helm release $(RELEASE) in $$VERIFY_NAMESPACE..."; \
+	helm status $(RELEASE) -n "$$VERIFY_NAMESPACE" >/dev/null; \
+	echo "==> Waiting for S4..."; \
+	oc rollout status deployment/s4 -n "$$VERIFY_NAMESPACE" --timeout=$(VERIFY_TIMEOUT); \
+	S4_SECRET_STATE=$$(oc get secret s4-credentials -n "$$VERIFY_NAMESPACE" \
+		-o go-template='{{if and .data.AWS_ACCESS_KEY_ID .data.AWS_SECRET_ACCESS_KEY}}configured{{else}}missing{{end}}'); \
+	[ "$$S4_SECRET_STATE" = configured ] || { echo "Error: S4 credentials are missing." >&2; exit 1; }; \
+	oc get route s4 -n "$$VERIFY_NAMESPACE" >/dev/null; \
+	VERIFY_POD="s4-health-$$(date +%s)"; \
+	oc run "$$VERIFY_POD" -n "$$VERIFY_NAMESPACE" --rm --attach=true --restart=Never \
+		--image=image-registry.openshift-image-registry.svc:5000/openshift/cli:latest \
+		--command -- curl -fsS http://s4:5000/api >/dev/null; \
+	echo "==> Waiting for the OpenShift AI pipeline server..."; \
+	oc wait datasciencepipelinesapplication/dspa -n "$$VERIFY_NAMESPACE" \
+		--for=condition=Ready --timeout=$(VERIFY_TIMEOUT); \
+	oc rollout status deployment/ds-pipeline-dspa -n "$$VERIFY_NAMESPACE" \
+		--timeout=$(VERIFY_TIMEOUT); \
+	if [ "$(DEPLOY_EMBEDDING_MODEL)" = true ]; then \
+		echo "==> Verifying embedding-model release..."; \
+		helm status e5-mistral -n "$$VERIFY_NAMESPACE" >/dev/null; \
+	fi; \
+	if [ "$(DEPLOY_OTEL)" = true ]; then \
+		: "$${OTEL_NAMESPACE:?OTEL_NAMESPACE must be set in $(ENV_FILE)}"; \
+		: "$${OTEL_SERVICE_NAME:?OTEL_SERVICE_NAME must be set in $(ENV_FILE)}"; \
+		echo "==> Verifying OpenTelemetry and Tempo resources..."; \
+		oc get opentelemetrycollector "$$OTEL_SERVICE_NAME" -n "$$OTEL_NAMESPACE" >/dev/null; \
+		oc get tempostack "$$OTEL_SERVICE_NAME" -n "$$OTEL_NAMESPACE" >/dev/null; \
+	fi; \
+	echo "verify-deploy: PASS namespace=$$VERIFY_NAMESPACE release=$(RELEASE)"
+
+verify-primary-flow:
+	@set -eu; set -a; . "$(ENV_FILE)"; set +a; \
+	VERIFY_NAMESPACE="$(NAMESPACE)"; \
+	: "$${VERIFY_NAMESPACE:=$${KFP_NAMESPACE:-}}"; \
+	: "$${VERIFY_NAMESPACE:?Set NAMESPACE or KFP_NAMESPACE in $(ENV_FILE)}"; \
+	LATEST_WORKFLOW=$$(oc get workflows.argoproj.io -n "$$VERIFY_NAMESPACE" \
+		--sort-by=.metadata.creationTimestamp -o name \
+		| grep '/single-repo-pipeline-' | tail -n 1); \
+	[ -n "$$LATEST_WORKFLOW" ] || { \
+		echo "Error: no single-repository pipeline workflow was found." >&2; exit 1; \
+	}; \
+	echo "==> Verifying primary flow: $$LATEST_WORKFLOW"; \
+	STARTED_AT=$$(date +%s); \
+	while :; do \
+		PHASE=$$(oc get "$$LATEST_WORKFLOW" -n "$$VERIFY_NAMESPACE" \
+			-o jsonpath='{.status.phase}'); \
+		case "$$PHASE" in \
+			Succeeded) \
+				echo "verify-primary-flow: PASS workflow=$$LATEST_WORKFLOW phase=$$PHASE"; \
+				exit 0;; \
+			Failed|Error) \
+				MESSAGE=$$(oc get "$$LATEST_WORKFLOW" -n "$$VERIFY_NAMESPACE" \
+					-o jsonpath='{.status.message}'); \
+				echo "verify-primary-flow: FAIL workflow=$$LATEST_WORKFLOW phase=$$PHASE message=$$MESSAGE" >&2; \
+				exit 1;; \
+		esac; \
+		NOW=$$(date +%s); \
+		if [ $$((NOW - STARTED_AT)) -ge $(PIPELINE_VERIFY_TIMEOUT) ]; then \
+			echo "verify-primary-flow: TIMEOUT workflow=$$LATEST_WORKFLOW phase=$$PHASE" >&2; \
+			exit 1; \
+		fi; \
+		echo "    phase=$${PHASE:-Pending}; waiting 15 seconds..."; \
+		sleep 15; \
+	done
 test-all:
 	@echo "==> Running UI tests..."
 	uv run --project ui --frozen pytest ui/tests
@@ -671,22 +766,6 @@ deploy-otel:
 	echo "==> Creating OTel namespace $$OTEL_NAMESPACE..." && \
 	oc create namespace $$OTEL_NAMESPACE --dry-run=client -o yaml | oc apply -f - && \
 	\
-	echo "==> Waiting for MinIO to be ready..." && \
-	oc wait deployment/minio -n $$KFP_NAMESPACE --for=condition=Available --timeout=120s && \
-	\
-	echo "==> Creating Tempo S3 bucket..." && \
-	oc delete job create-tempo-bucket -n $$OTEL_NAMESPACE --ignore-not-found=true && \
-	helm template agent-mesh-for-sw resources/helm \
-		--set namespace=$$KFP_NAMESPACE \
-		--set otel.namespace=$$OTEL_NAMESPACE \
-		--set otel.createBucket=true \
-		--set minio.endpoint=http://minio-service.$$KFP_NAMESPACE.svc.cluster.local:9000 \
-		--set minio.rootUser=$$AWS_ACCESS_KEY_ID \
-		--set minio.rootPassword=$$AWS_SECRET_ACCESS_KEY \
-		-s templates/create-tempo-bucket-job.yaml | oc apply -f - && \
-	oc wait job/create-tempo-bucket -n $$OTEL_NAMESPACE --for=condition=complete --timeout=120s && \
-	oc delete job create-tempo-bucket -n $$OTEL_NAMESPACE --ignore-not-found=true && \
-	\
 	echo "==> Deploying TempoStack and OpenTelemetry Collector..." && \
 	helm upgrade agent-mesh-for-sw resources/helm \
 		--namespace "$$KFP_NAMESPACE" \
@@ -694,9 +773,6 @@ deploy-otel:
 		--no-hooks \
 		--set namespace="$$KFP_NAMESPACE" \
 		--set otel.namespace=$$OTEL_NAMESPACE \
-		--set minio.endpoint=http://minio-service.$$KFP_NAMESPACE.svc.cluster.local:9000 \
-		--set minio.rootUser=$$AWS_ACCESS_KEY_ID \
-		--set minio.rootPassword=$$AWS_SECRET_ACCESS_KEY \
 		--set otel.enabled=true \
 		--set otel.name=$$OTEL_SERVICE_NAME
 
