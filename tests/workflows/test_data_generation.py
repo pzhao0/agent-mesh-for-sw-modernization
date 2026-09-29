@@ -1,26 +1,11 @@
 import sys
 from types import ModuleType
 
+import utils
 from pipelines.base import data_generation
 
 
-def disable_telemetry(monkeypatch):
-    telemetry_module = ModuleType("telemetry.default_custom_telemetry")
-
-    class NoopTelemetry:
-        def track(self):
-            return None
-
-    telemetry_module.DefaultCustomTelemetry = NoopTelemetry
-    monkeypatch.setitem(
-        sys.modules,
-        "telemetry.default_custom_telemetry",
-        telemetry_module,
-    )
-
-
 def test_data_generation_runs_code_and_config_passes(monkeypatch):
-    disable_telemetry(monkeypatch)
     calls = []
 
     monkeypatch.setattr(
@@ -53,7 +38,6 @@ def test_data_generation_runs_code_and_config_passes(monkeypatch):
 
 
 def test_data_generation_cleans_up_after_failure(monkeypatch):
-    disable_telemetry(monkeypatch)
     cleanups = []
 
     monkeypatch.setattr(
@@ -83,3 +67,40 @@ def test_data_generation_cleans_up_after_failure(monkeypatch):
     assert result["status"] == "error"
     assert "clone failed" in result["fail_message"]
     assert cleanups == [("source", "target")]
+
+
+def test_multi_repo_uses_isolated_paths_and_preserves_results(monkeypatch):
+    calls = []
+    code_utils = ModuleType("utils.code_utils")
+    code_utils.generate_slug_from_repo = lambda repo, branch: f"{repo.rsplit('/', 1)[-1]}-{branch}"
+    monkeypatch.setitem(sys.modules, "utils.code_utils", code_utils)
+    monkeypatch.setattr(utils, "code_utils", code_utils, raising=False)
+    monkeypatch.setenv("PARENT_SOURCE_PATH", "sources")
+    monkeypatch.setenv("PARENT_TARGET_PATH", "targets")
+
+    def fake_run(self, **kwargs):
+        calls.append(kwargs)
+        return {
+            "git_slug": kwargs["source_path"].removeprefix("sources/"),
+            "status": "error" if kwargs["git_repo"].endswith("two") else "complete",
+        }
+
+    monkeypatch.setattr(data_generation.DataGenerationPipeline, "run", fake_run)
+
+    results = data_generation.DataGenerationPipeline().run_multi_repo(
+        [
+            {"git_repo": "https://github.com/example/one", "git_branch": "main"},
+            {"git_repo": "https://github.com/example/two", "git_branch": "dev"},
+        ]
+    )
+
+    assert [call["source_path"] for call in calls] == [
+        "sources/one-main",
+        "sources/two-dev",
+    ]
+    assert [call["target_path"] for call in calls] == [
+        "targets/one-main",
+        "targets/two-dev",
+    ]
+    assert all(call["multi_repo"] for call in calls)
+    assert [result["status"] for result in results] == ["complete", "error"]

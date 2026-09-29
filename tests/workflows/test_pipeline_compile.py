@@ -17,6 +17,7 @@ EXPECTED_PIPELINES = {
 def test_all_pipelines_compile(tmp_path):
     env = os.environ | {
         "PYTHONPATH": str(WORKFLOW_ROOT),
+        "KUBECONFIG": os.devnull,
         "PIPELINE_COMPILE_ONLY": "1",
         "KFP_PIPELINE_OUTPUT_DIR": str(tmp_path),
         "KFP_IMAGE_REGISTRY": "quay.io/test",
@@ -48,3 +49,28 @@ def test_all_pipelines_compile(tmp_path):
         document = yaml.safe_load(path.read_text())
         assert document["pipelineInfo"]["name"]
         assert document["root"]["dag"]["tasks"]
+
+        images = {
+            executor["container"]["image"]
+            for executor in document["deploymentSpec"]["executors"].values()
+        }
+        assert all("None" not in image for image in images)
+        assert all(not image.endswith(":latest") for image in images)
+
+    single_repo = yaml.safe_load((tmp_path / "single_repo.yaml").read_text())
+    single_tasks = single_repo["root"]["dag"]["tasks"]
+    assert single_tasks["graphrag-indexing-pipeline"]["dependentTasks"] == [
+        "data-generation-pipeline"
+    ]
+    assert single_tasks["graphrag-analysis-pipeline"]["dependentTasks"] == [
+        "graphrag-indexing-pipeline"
+    ]
+
+    multi_repo = yaml.safe_load((tmp_path / "multi_repo.yaml").read_text())
+    multi_tasks = multi_repo["root"]["dag"]["tasks"]
+    assert multi_tasks["graphrag-indexing-multi-repo-pipeline"]["dependentTasks"] == [
+        "data-generation-multi-repo-pipeline"
+    ]
+    assert multi_tasks["graphrag-analysis-multi-repo-pipeline"]["dependentTasks"] == [
+        "graphrag-indexing-multi-repo-pipeline"
+    ]
