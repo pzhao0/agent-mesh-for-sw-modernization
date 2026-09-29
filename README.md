@@ -84,17 +84,12 @@ Ensure that you have access to OpenAI-compatible endpoints for the following mod
 1. To build the container images, run the following: `make build-images`
 
 ### Installing via Makefile
+1. Run the Makefile: `make install`
+(**NOTE**: To deploy the local `e5-mistral` embedding model as part of installation, run:
+   `make install DEPLOY_EMBEDDING_MODEL=true`)
 
-Run the verified installation command:
-
-```sh
-make install DEPLOY_EMBEDDING_MODEL=true DEPLOY_OTEL=true
-```
-
-Omit `DEPLOY_EMBEDDING_MODEL=true` to use an externally hosted embedding
-model. Omit `DEPLOY_OTEL=true` when OpenTelemetry and Tempo are not required.
-
-OpenTelemetry and Tempo are optional and disabled by default.
+OpenTelemetry and Tempo are optional and disabled by default. To deploy them as
+part of installation, run `make install DEPLOY_OTEL=true`.
 
 ### Uninstalling
 
