@@ -43,7 +43,7 @@ Understanding** and **Code Migration**. This repository demonstrates the **Code 
 - Red Hat OpenShift AI 2.22+
 - 1X NVIDIA H200 GPU, 1X NVIDIA H100 GPU, 1X NVIDIA L40S GPU
 - 8+ vCPUs / 24+ GiB RAM
-- A default StorageClass capable of provisioning a 200 GiB ReadWriteOnce PVC for object storage
+- A default StorageClass capable of provisioning a 50 GiB ReadWriteOnce PVC for object storage
 - MLflow (assumes Openshift AI 3.4+) [Installation](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/working_with_mlflow/installing-mlflow_mlflow)
 - Openshift AI Model Registry [Installation](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/2.25/html-single/enabling_the_model_registry_component/index)
 - Openshift AI Model Catalog [Installation](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html-single/working_with_the_model_catalog/index)

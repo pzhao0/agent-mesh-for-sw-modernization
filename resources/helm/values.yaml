@@ -39,7 +39,7 @@ s4:
       enabled: false
   storage:
     data:
-      size: 200Gi
+      size: 50Gi
 
 pipelineStorage:
   bucket: demopipelines
