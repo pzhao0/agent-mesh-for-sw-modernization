@@ -1,5 +1,8 @@
 # Agent Mesh for Software Engineering - Code Understanding
 
+Analyze legacy code, build a GraphRAG knowledge graph, and generate an
+evidence-based modernization plan on Red Hat OpenShift AI.
+
 Contents
 ---
 
@@ -11,6 +14,8 @@ Contents
   - [(Optional) Building the Container Images](#optional-building-the-container-images)
   - [Installing via Makefile](#installing-via-makefile)
   - [S4 Object Storage](#s4-object-storage)
+  - [Configuration](#configuration)
+  - [Verifying the Deployment](#verifying-the-deployment)
   - [Uninstalling](#uninstalling)
 - [Running the Code Understanding Workflow](#running-the-code-understanding-workflow)
 - [Running Adhoc Queries](#running-adhoc-queries)
@@ -22,6 +27,7 @@ Contents
 - [Add-ons (Optional)](#add-ons)
   - [Code Understanding UI](#code-understanding-ui)
   - [Code Understanding Console Plugin (requires cluster-admin permissions)](#code-understanding-console-plugin)
+- [Tags](#tags)
 
 <a id="overview"></a>
 ## 🧭 Overview
@@ -52,6 +58,11 @@ Understanding** and **Code Migration**. This repository demonstrates the **Code 
 - (**Optional**) Red Hat build of OpenTelemetry operator [Installation](https://docs.redhat.com/en/documentation/openshift_container_platform/4.18/html/distributed_tracing/distributed-tracing-otel-install)
 - (**Optional**) Tempo Operator [Installation](https://docs.redhat.com/en/documentation/openshift_container_platform/4.18/html/distributed_tracing/distributed-tracing-tempo-install)
 
+The installer requires a user who can create the target projects and their
+workloads. Deploying project workbench image streams, OpenTelemetry resources,
+or the OpenShift console plugin requires cluster-admin access or equivalent
+delegated permissions.
+
 <a id="documentation"></a>
 
 ## Installing the Code Understanding Workflow
@@ -76,12 +87,17 @@ Ensure that you have access to OpenAI-compatible endpoints for the following mod
 1. To build the container images, run the following: `make build-images`
 
 ### Installing via Makefile
-1. Run the Makefile: `make install`
-(**NOTE**: To deploy the local `e5-mistral` embedding model as part of installation, run:
-   `make install DEPLOY_EMBEDDING_MODEL=true`)
 
-OpenTelemetry and Tempo are optional and disabled by default. To deploy them as
-part of installation, run `make install DEPLOY_OTEL=true`.
+Run the verified installation command:
+
+```sh
+make install DEPLOY_EMBEDDING_MODEL=true DEPLOY_OTEL=true
+```
+
+Omit `DEPLOY_EMBEDDING_MODEL=true` to use an externally hosted embedding
+model. Omit `DEPLOY_OTEL=true` when OpenTelemetry and Tempo are not required.
+
+OpenTelemetry and Tempo are optional and disabled by default.
 
 ### S4 Object Storage
 
@@ -101,6 +117,49 @@ A regular bootstrap Job waits for S4 and creates the application bucket from
 enabled, it also creates the `tempo` bucket. The pipeline and Tempo bucket names
 can be changed through `pipelineStorage.bucket` and `otel.tempo.bucket` in
 `resources/helm/values.yaml`.
+
+### Configuration
+
+Copy `.env.template` to `.env` and replace every placeholder required for the
+features you deploy. The file is ignored by Git and must not be committed.
+
+| Variables | Purpose |
+|-----------|---------|
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_S3_BUCKET` | S4 credentials and the application artifact bucket |
+| `S4_UI_USERNAME`, `S4_UI_PASSWORD` | Credentials for the authenticated S4 web UI |
+| `GIT_USERNAME`, `GIT_TOKEN` | Credentials used by jobs to clone the implementation and analyzed repositories |
+| `GIT_REPO`, `GIT_BRANCH`, `GIT_REPO_LIST` | Repository input for single- and multi-repository runs |
+| `GRAPHRAG_LLM_*` | Chat model used to build and query the GraphRAG index |
+| `EMBED_LLM_*` | Embedding model endpoint, identifier, token, and provider |
+| `GROUND_TRUTH_LLM_*`, `JUDGE_LLM_*` | Models used by pipeline evaluation |
+| `CODE_LLM_*` | Optional coding-agent model used by integrations |
+| `KFP_NAMESPACE` | OpenShift project containing the Data Science Pipelines Application |
+| `KFP_DATA_GENERATION_OUTPUT_PATH`, `KFP_DATA_INDEXING_OUTPUT_PATH` | Pipeline artifact paths |
+| `KFP_IMAGE_REGISTRY`, `KFP_*_IMAGE_NAME`, `KFP_*_IMAGE_TAG` | Registry coordinates for pipeline component images |
+| `CONSOLE_APP_IMAGE_NAME`, `CONSOLE_PLUGIN_IMAGE_NAME`, `CONSOLE_IMAGE_TAG` | Registry coordinates for optional console images |
+| `MLFLOW_TRACKING_URI`, `MLFLOW_TRACKING_INSECURE_TLS`, `MLFLOW_TRACKING_AUTH` | MLflow connection and authentication settings |
+| `ASSET_LOADER`, `INSTALL_PREBUILT_INDEX` | Asset source and optional prebuilt-index installation |
+| `CUSTOM_EVALUATOR` | Evaluation implementation: `basic` or `mlflow` |
+| `LOGLEVEL` | Application and pipeline log level |
+| `OTEL_SERVICE_NAME`, `OTEL_NAMESPACE`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER` | Optional OpenTelemetry deployment and export settings |
+| `MLFLOW_TRACE_ENABLE_OTLP_DUAL_EXPORT`, `OTEL_SEMCONV_STABILITY_OPT_IN` | Optional MLflow/OpenTelemetry trace behavior |
+
+GraphRAG chat and embedding concurrency is capped at two simultaneous requests
+to reduce model endpoint rate limiting.
+
+### Verifying the Deployment
+
+After installation, run the same checks used for this quickstart:
+
+```sh
+make helm-lint
+make helm-template
+make verify-deploy DEPLOY_EMBEDDING_MODEL=true DEPLOY_OTEL=true
+```
+
+The verification checks the Helm release, S4 health and credentials, the Data
+Science Pipelines Application, and the optional embedding and observability
+resources without printing secret values.
 
 ### Uninstalling
 
@@ -123,21 +182,32 @@ ownership model. It does not remove externally stored MLflow data, externally
 pushed container images, or the optional cluster-wide OpenShift console plugin.
 
 ## Running the Code Understanding Workflow
+
 1. To run the **Code Understanding** pipeline for a single repository, run:
-```make run-pipelines ARGS="--single-repo"```
+
+   ```sh
+   make run-pipelines ARGS="--single-repo"
+   ```
 
    To override the default repository or branch:
     - Update `GIT_REPO` and `GIT_BRANCH` in `.env` to the desired repository and branch.
     - Run the following: 
-   ```make apply-secrets && make run-pipelines ARGS="--single-repo"```
+   ```sh
+   make apply-secrets
+   make run-pipelines ARGS="--single-repo"
+   ```
 
    OR without modifying `.env`:
-   ```make run-pipelines ARGS="--single-repo" PIPELINE_GIT_REPO=https://github.com/org/repo PIPELINE_GIT_BRANCH=main```
+   ```sh
+   make run-pipelines ARGS="--single-repo" PIPELINE_GIT_REPO=https://github.com/org/repo PIPELINE_GIT_BRANCH=main
+   ```
 
 2. To run the **Code Understanding** pipeline for multiple repositories:
     - Update `workflows/examples/code_understanding/assets/repos/repo_list.json` with the list of repositories to be processed.
     - Run the following command:
-   ```make run-pipelines ARGS="--multi-repo"```
+   ```sh
+   make run-pipelines ARGS="--multi-repo"
+   ```
 
 ## Running Adhoc Queries
 1. To run adhoc queries about the indexed code, run the following:
@@ -240,3 +310,12 @@ Then launch:
 Navigation also appears under **Administrator** → **Home** → **Code Understanding**. 
 
 **NOTE**: The plugin is enabled cluster-wide through `consoles.operator.openshift.io/cluster`. If it does not appear at first, run `make enable-console-plugin`.
+
+## Tags
+
+- **Title:** Agent Mesh for Software Engineering - Code Understanding
+- **Description:** Analyze legacy code with GraphRAG and generate an evidence-based modernization plan on Red Hat OpenShift AI.
+- **Industry:** Cross-industry
+- **Product:** Red Hat OpenShift AI
+- **Use case:** Application modernization, code understanding, generative AI
+- **Contributor organization:** Red Hat
