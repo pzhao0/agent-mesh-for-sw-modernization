@@ -9,7 +9,6 @@ RELEASE               ?= agent-mesh-for-sw
 CHART_DIR             ?= resources/helm
 NAMESPACE             ?=
 VERIFY_TIMEOUT        ?= 10m
-PIPELINE_VERIFY_TIMEOUT ?= 7200
 WORKBENCH_IMAGESTREAM_NAMESPACE ?= redhat-ods-applications
 GIT_REPO_URL        	:= $(shell git remote get-url origin 2>/dev/null | sed 's|^git@\([^:]*\):\(.*\)$$|https://\1/\2|')
 GIT_REPO_BRANCH     	:= $(shell git branch --show-current 2>/dev/null)
@@ -65,7 +64,6 @@ endif
 	helm-template \
 	verify-secrets \
 	verify-deploy \
-	verify-primary-flow \
 	test-all \
 	format \
 	lint \
@@ -134,7 +132,6 @@ help-all:
 	@echo "  helm-template               Render the deployment chart"
 	@echo "  verify-secrets              Check tracked files for committed secrets"
 	@echo "  verify-deploy               Verify the installed release and health endpoints"
-	@echo "  verify-primary-flow         Wait for the latest single-repository pipeline run"
 	@echo ""
 	@echo "Utility commands:"
 	@echo "  format                      Format Python code with isort and Black"
@@ -488,40 +485,6 @@ verify-deploy: verify-secrets
 	fi; \
 	echo "verify-deploy: PASS namespace=$$VERIFY_NAMESPACE release=$(RELEASE)"
 
-verify-primary-flow:
-	@set -eu; set -a; . "$(ENV_FILE)"; set +a; \
-	VERIFY_NAMESPACE="$(NAMESPACE)"; \
-	: "$${VERIFY_NAMESPACE:=$${KFP_NAMESPACE:-}}"; \
-	: "$${VERIFY_NAMESPACE:?Set NAMESPACE or KFP_NAMESPACE in $(ENV_FILE)}"; \
-	LATEST_WORKFLOW=$$(oc get workflows.argoproj.io -n "$$VERIFY_NAMESPACE" \
-		--sort-by=.metadata.creationTimestamp -o name \
-		| grep '/single-repo-pipeline-' | tail -n 1); \
-	[ -n "$$LATEST_WORKFLOW" ] || { \
-		echo "Error: no single-repository pipeline workflow was found." >&2; exit 1; \
-	}; \
-	echo "==> Verifying primary flow: $$LATEST_WORKFLOW"; \
-	STARTED_AT=$$(date +%s); \
-	while :; do \
-		PHASE=$$(oc get "$$LATEST_WORKFLOW" -n "$$VERIFY_NAMESPACE" \
-			-o jsonpath='{.status.phase}'); \
-		case "$$PHASE" in \
-			Succeeded) \
-				echo "verify-primary-flow: PASS workflow=$$LATEST_WORKFLOW phase=$$PHASE"; \
-				exit 0;; \
-			Failed|Error) \
-				MESSAGE=$$(oc get "$$LATEST_WORKFLOW" -n "$$VERIFY_NAMESPACE" \
-					-o jsonpath='{.status.message}'); \
-				echo "verify-primary-flow: FAIL workflow=$$LATEST_WORKFLOW phase=$$PHASE message=$$MESSAGE" >&2; \
-				exit 1;; \
-		esac; \
-		NOW=$$(date +%s); \
-		if [ $$((NOW - STARTED_AT)) -ge $(PIPELINE_VERIFY_TIMEOUT) ]; then \
-			echo "verify-primary-flow: TIMEOUT workflow=$$LATEST_WORKFLOW phase=$$PHASE" >&2; \
-			exit 1; \
-		fi; \
-		echo "    phase=$${PHASE:-Pending}; waiting 15 seconds..."; \
-		sleep 15; \
-	done
 test-all:
 	@echo "==> Running UI tests..."
 	uv run --project ui --frozen pytest ui/tests

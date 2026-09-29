@@ -13,9 +13,6 @@ Contents
   - [Preparing the Environment](#preparing-the-environment)
   - [(Optional) Building the Container Images](#optional-building-the-container-images)
   - [Installing via Makefile](#installing-via-makefile)
-  - [S4 Object Storage](#s4-object-storage)
-  - [Configuration](#configuration)
-  - [Verifying the Deployment](#verifying-the-deployment)
   - [Uninstalling](#uninstalling)
 - [Running the Code Understanding Workflow](#running-the-code-understanding-workflow)
 - [Running Adhoc Queries](#running-adhoc-queries)
@@ -98,68 +95,6 @@ Omit `DEPLOY_EMBEDDING_MODEL=true` to use an externally hosted embedding
 model. Omit `DEPLOY_OTEL=true` when OpenTelemetry and Tempo are not required.
 
 OpenTelemetry and Tempo are optional and disabled by default.
-
-### S4 Object Storage
-
-The Helm release deploys [S4 (Super Simple Storage
-Service)](https://github.com/rh-aiservices-bu/s4) as its S3-compatible object
-store. The pipeline server connects to the internal endpoint
-`http://s4:7480` using the `s4-credentials` Secret. The S3 API is not exposed
-outside the cluster.
-
-Set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `S4_UI_USERNAME`, and
-`S4_UI_PASSWORD` in `.env` before installation. `make install` enables the S4
-web UI Route on port 5000 with authentication. Find the `s4` Route in the
-OpenShift console under **Networking → Routes**.
-
-A regular bootstrap Job waits for S4 and creates the application bucket from
-`AWS_S3_BUCKET` plus the `demopipelines` pipeline bucket. When OpenTelemetry is
-enabled, it also creates the `tempo` bucket. The pipeline and Tempo bucket names
-can be changed through `pipelineStorage.bucket` and `otel.tempo.bucket` in
-`resources/helm/values.yaml`.
-
-### Configuration
-
-Copy `.env.template` to `.env` and replace every placeholder required for the
-features you deploy. The file is ignored by Git and must not be committed.
-
-| Variables | Purpose |
-|-----------|---------|
-| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_S3_BUCKET` | S4 credentials and the application artifact bucket |
-| `S4_UI_USERNAME`, `S4_UI_PASSWORD` | Credentials for the authenticated S4 web UI |
-| `GIT_USERNAME`, `GIT_TOKEN` | Credentials used by jobs to clone the implementation and analyzed repositories |
-| `GIT_REPO`, `GIT_BRANCH`, `GIT_REPO_LIST` | Repository input for single- and multi-repository runs |
-| `GRAPHRAG_LLM_*` | Chat model used to build and query the GraphRAG index |
-| `EMBED_LLM_*` | Embedding model endpoint, identifier, token, and provider |
-| `GROUND_TRUTH_LLM_*`, `JUDGE_LLM_*` | Models used by pipeline evaluation |
-| `CODE_LLM_*` | Optional coding-agent model used by integrations |
-| `KFP_NAMESPACE` | OpenShift project containing the Data Science Pipelines Application |
-| `KFP_DATA_GENERATION_OUTPUT_PATH`, `KFP_DATA_INDEXING_OUTPUT_PATH` | Pipeline artifact paths |
-| `KFP_IMAGE_REGISTRY`, `KFP_*_IMAGE_NAME`, `KFP_*_IMAGE_TAG` | Registry coordinates for pipeline component images |
-| `CONSOLE_APP_IMAGE_NAME`, `CONSOLE_PLUGIN_IMAGE_NAME`, `CONSOLE_IMAGE_TAG` | Registry coordinates for optional console images |
-| `MLFLOW_TRACKING_URI`, `MLFLOW_TRACKING_INSECURE_TLS`, `MLFLOW_TRACKING_AUTH` | MLflow connection and authentication settings |
-| `ASSET_LOADER`, `INSTALL_PREBUILT_INDEX` | Asset source and optional prebuilt-index installation |
-| `CUSTOM_EVALUATOR` | Evaluation implementation: `basic` or `mlflow` |
-| `LOGLEVEL` | Application and pipeline log level |
-| `OTEL_SERVICE_NAME`, `OTEL_NAMESPACE`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER` | Optional OpenTelemetry deployment and export settings |
-| `MLFLOW_TRACE_ENABLE_OTLP_DUAL_EXPORT`, `OTEL_SEMCONV_STABILITY_OPT_IN` | Optional MLflow/OpenTelemetry trace behavior |
-
-GraphRAG chat and embedding concurrency is capped at two simultaneous requests
-to reduce model endpoint rate limiting.
-
-### Verifying the Deployment
-
-After installation, run the same checks used for this quickstart:
-
-```sh
-make helm-lint
-make helm-template
-make verify-deploy DEPLOY_EMBEDDING_MODEL=true DEPLOY_OTEL=true
-```
-
-The verification checks the Helm release, S4 health and credentials, the Data
-Science Pipelines Application, and the optional embedding and observability
-resources without printing secret values.
 
 ### Uninstalling
 
