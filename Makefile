@@ -431,7 +431,6 @@ apply-secrets:
 # ============================================================================
 
 helm-lint:
-	helm dependency build $(CHART_DIR)
 	helm lint $(CHART_DIR)
 
 helm-template:
