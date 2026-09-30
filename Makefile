@@ -257,7 +257,7 @@ help-all:
 	@echo ""
 	@echo "Common runtime overrides (not exhaustive):"
 	@echo "  ENV_FILE                    Environment file to load (default: ./.env)"
-	@echo "  BASE_VERSION                Fallback for omitted image tags (default: v0.1.1)"
+	@echo "  BASE_VERSION                Fallback for omitted image tags (default: $(BASE_VERSION))"
 	@echo "  DEPLOY_EMBEDDING_MODEL      Deploy e5-mistral during install (default: false)"
 	@echo "  DEPLOY_OTEL                 Deploy OpenTelemetry and Tempo during install (default: false)"
 	@echo "  PIPELINE_GIT_REPO           Override the repository used by run-pipelines"
