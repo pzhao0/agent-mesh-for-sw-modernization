@@ -80,6 +80,23 @@ Ensure that you have access to OpenAI-compatible endpoints for the following mod
 
 1. Create an environment variables file `.env` using `.env.template` as a guide.
 
+   At minimum, configure the following installation and model values:
+
+   - Object storage and project: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+     `S4_UI_USERNAME`, `S4_UI_PASSWORD`, and `KFP_NAMESPACE`.
+   - GraphRAG chat model: `GRAPHRAG_LLM_TOKEN`, `GRAPHRAG_LLM_ID`,
+     `GRAPHRAG_LLM_API_BASE`, `GRAPHRAG_LLM_PROVIDER`, and
+     `GRAPHRAG_LLM_PROVIDER_SETTINGS_XML`.
+   - GraphRAG embedding model: `EMBED_LLM_TOKEN`, `EMBED_LLM_API_BASE`,
+     `EMBED_LLM_ID`, `EMBED_LLM_PROVIDER`, and
+     `EMBED_LLM_PROVIDER_SETTINGS_XML`.
+
+   The embedding model values can be omitted when installing the bundled local
+   model with `make install DEPLOY_EMBEDDING_MODEL=true`. Git credentials are
+   only required when the source or analyzed repositories require
+   authentication. Ground-truth, judge, and code model settings are optional
+   unless their corresponding evaluation or coding-agent features are used.
+
 ### (Optional) Building the Container Images
 1. To build the container images, run the following: `make build-images`
 

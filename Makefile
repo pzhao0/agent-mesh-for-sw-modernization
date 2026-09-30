@@ -5,18 +5,26 @@
 .DEFAULT_GOAL := install
 
 ENV_FILE            	?= ./.env
+
+ifneq (,$(wildcard $(ENV_FILE)))
+include $(ENV_FILE)
+endif
+
+# Export included configuration and the defaults below to every recipe.
+export
+
 RELEASE               ?= agent-mesh-for-sw
 CHART_DIR             ?= resources/helm
 NAMESPACE             ?=
 VERIFY_TIMEOUT        ?= 10m
 WORKBENCH_IMAGESTREAM_NAMESPACE ?= redhat-ods-applications
 # Fall back to origin and the local branch when no upstream is configured.
-GIT_LOCAL_BRANCH    	:= $(shell git branch --show-current 2>/dev/null)
-GIT_REPO_REMOTE     	:= $(or $(shell git config --get "branch.$(GIT_LOCAL_BRANCH).remote" 2>/dev/null),origin)
-GIT_REPO_URL        	:= $(shell git remote get-url "$(GIT_REPO_REMOTE)" 2>/dev/null | sed 's|^git@\([^:]*\):\(.*\)$$|https://\1/\2|')
-GIT_REPO_BRANCH     	:= $(or $(shell git config --get "branch.$(GIT_LOCAL_BRANCH).merge" 2>/dev/null | sed 's|^refs/heads/||'),$(GIT_LOCAL_BRANCH))
-CLUSTER_DOMAIN      	:= $(shell oc get ingress.config cluster -o jsonpath='{.spec.domain}' 2>/dev/null)
-GATEWAY_HOST        	:= $(shell oc get gateway data-science-gateway -n openshift-ingress -o jsonpath='{.status.addresses[0].value}' 2>/dev/null)
+GIT_LOCAL_BRANCH    	?= $(shell git branch --show-current 2>/dev/null)
+GIT_REPO_REMOTE     	?= $(or $(shell git config --get "branch.$(GIT_LOCAL_BRANCH).remote" 2>/dev/null),origin)
+GIT_REPO_URL        	?= $(shell git remote get-url "$(GIT_REPO_REMOTE)" 2>/dev/null | sed 's|^git@\([^:]*\):\(.*\)$$|https://\1/\2|')
+GIT_REPO_BRANCH     	?= $(or $(shell git config --get "branch.$(GIT_LOCAL_BRANCH).merge" 2>/dev/null | sed 's|^refs/heads/||'),$(GIT_LOCAL_BRANCH))
+CLUSTER_DOMAIN      	?= $(shell oc get ingress.config cluster -o jsonpath='{.spec.domain}' 2>/dev/null)
+GATEWAY_HOST        	?= $(shell oc get gateway data-science-gateway -n openshift-ingress -o jsonpath='{.status.addresses[0].value}' 2>/dev/null)
 PIPELINE_GIT_REPO   	?=
 PIPELINE_GIT_BRANCH 	?=
 PIPELINE_GIT_REPO_LIST	?=
@@ -31,12 +39,13 @@ CONTAINER_ENGINE      ?= $(if $(CI),docker,podman)
 REGISTRY              ?=
 VERSION               ?=
 
-# Defaults for values omitted from .env. Sourcing .env in each recipe lets
-# configured values override these defaults.
+# Defaults for values omitted from .env and the calling environment.
 AWS_S3_BUCKET                      ?= data
 GIT_REPO                           ?= https://github.com/agapebondservant/tic-tac-toe-sample
 GIT_BRANCH                         ?= main
 GIT_REPO_LIST                      ?= workflows/examples/code_understanding/assets/repos/repo_list.json
+KFP_DATA_GENERATION_OUTPUT_PATH    ?= target
+KFP_DATA_INDEXING_OUTPUT_PATH      ?= graphrag-source
 KFP_IMAGE_REGISTRY                 ?= quay.io/rh-ai-quickstart
 KFP_DATA_GENERATION_BASE_IMAGE_NAME ?= agent-mesh-for-sw-modernization-data-generation
 KFP_INDEXING_BASE_IMAGE_NAME         ?= agent-mesh-for-sw-modernization-data-indexing
@@ -46,7 +55,7 @@ CONSOLE_APP_IMAGE_NAME               ?= agent-mesh-for-sw-modernization-console-
 CONSOLE_PLUGIN_IMAGE_NAME            ?= agent-mesh-for-sw-modernization-console-plugin
 # Shared fallback for image tags omitted from .env. VERSION overrides these
 # tags for build/push only.
-BASE_VERSION                         := v0.1.1
+BASE_VERSION                         ?= v0.1.2
 KFP_DATA_GENERATION_BASE_IMAGE_TAG   ?= $(BASE_VERSION)
 KFP_INDEXING_BASE_IMAGE_TAG          ?= $(BASE_VERSION)
 KFP_ANALYSIS_BASE_IMAGE_TAG          ?= $(BASE_VERSION)
@@ -56,22 +65,38 @@ ASSET_LOADER                        ?= mlflow
 INSTALL_PREBUILT_INDEX              ?= true
 CUSTOM_EVALUATOR                    ?= mlflow
 OTEL_SERVICE_NAME                   ?= code-understanding
+OTEL_NAMESPACE                      ?= $(KFP_NAMESPACE)
+OTEL_EXPORTER_OTLP_ENDPOINT         ?= http://$(OTEL_SERVICE_NAME)-collector.$(OTEL_NAMESPACE).svc.cluster.local:4318
 OTEL_EXPORTER                       ?= otlp_http
+MLFLOW_TRACKING_INSECURE_TLS        ?= true
+MLFLOW_TRACKING_AUTH                ?= kubernetes-namespaced
 MLFLOW_TRACE_ENABLE_OTLP_DUAL_EXPORT ?= true
 OTEL_SEMCONV_STABILITY_OPT_IN       ?= genai
 
-DEFAULTED_ENV_VARS := \
-	AWS_S3_BUCKET \
-	GIT_REPO GIT_BRANCH GIT_REPO_LIST KFP_IMAGE_REGISTRY \
+SECRET_ENV_VARS := \
+	AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_S3_BUCKET \
+	S4_UI_USERNAME S4_UI_PASSWORD \
+	GIT_USERNAME GIT_TOKEN GIT_REPO GIT_BRANCH GIT_REPO_LIST \
+	GRAPHRAG_LLM_TOKEN GRAPHRAG_LLM_ID GRAPHRAG_LLM_API_BASE \
+	GRAPHRAG_LLM_PROVIDER GRAPHRAG_LLM_PROVIDER_SETTINGS_XML \
+	EMBED_LLM_TOKEN EMBED_LLM_API_BASE EMBED_LLM_ID \
+	EMBED_LLM_PROVIDER EMBED_LLM_PROVIDER_SETTINGS_XML \
+	GROUND_TRUTH_LLM_TOKEN GROUND_TRUTH_LLM_ID GROUND_TRUTH_LLM_API_BASE \
+	GROUND_TRUTH_LLM_PROVIDER GROUND_TRUTH_LLM_THINKING \
+	JUDGE_LLM_TOKEN JUDGE_LLM_ID JUDGE_LLM_API_BASE \
+	JUDGE_LLM_PROVIDER JUDGE_LLM_THINKING \
+	CODE_LLM_TOKEN CODE_LLM_API_BASE CODE_LLM_ID CODE_LLM_PROVIDER \
+	KFP_NAMESPACE KFP_DATA_GENERATION_OUTPUT_PATH KFP_DATA_INDEXING_OUTPUT_PATH \
+	KFP_IMAGE_REGISTRY \
 	KFP_DATA_GENERATION_BASE_IMAGE_NAME KFP_INDEXING_BASE_IMAGE_NAME \
 	KFP_ANALYSIS_BASE_IMAGE_NAME KFP_PIPELINE_TOOLS_IMAGE_NAME \
 	CONSOLE_APP_IMAGE_NAME CONSOLE_PLUGIN_IMAGE_NAME \
 	KFP_DATA_GENERATION_BASE_IMAGE_TAG KFP_INDEXING_BASE_IMAGE_TAG \
 	KFP_ANALYSIS_BASE_IMAGE_TAG KFP_PIPELINE_TOOLS_IMAGE_TAG CONSOLE_IMAGE_TAG \
-	ASSET_LOADER INSTALL_PREBUILT_INDEX CUSTOM_EVALUATOR \
+	MLFLOW_TRACKING_URI MLFLOW_TRACKING_INSECURE_TLS MLFLOW_TRACKING_AUTH \
+	ASSET_LOADER INSTALL_PREBUILT_INDEX CUSTOM_EVALUATOR LOGLEVEL \
 	OTEL_SERVICE_NAME OTEL_NAMESPACE OTEL_EXPORTER_OTLP_ENDPOINT OTEL_EXPORTER \
 	MLFLOW_TRACE_ENABLE_OTLP_DUAL_EXPORT OTEL_SEMCONV_STABILITY_OPT_IN
-export $(DEFAULTED_ENV_VARS)
 
 # ============================================================================
 # Container engine
@@ -86,6 +111,14 @@ IMAGE_PUSH  := podman push
 else
 $(error Unsupported CONTAINER_ENGINE '$(CONTAINER_ENGINE)'; use docker or podman)
 endif
+
+BUILD_REGISTRY       = $(or $(REGISTRY),$(KFP_IMAGE_REGISTRY))
+DATAGEN_IMAGE        = $(BUILD_REGISTRY)/$(KFP_DATA_GENERATION_BASE_IMAGE_NAME):$(or $(VERSION),$(KFP_DATA_GENERATION_BASE_IMAGE_TAG))
+INDEX_IMAGE          = $(BUILD_REGISTRY)/$(KFP_INDEXING_BASE_IMAGE_NAME):$(or $(VERSION),$(KFP_INDEXING_BASE_IMAGE_TAG))
+ANALYSIS_IMAGE       = $(BUILD_REGISTRY)/$(KFP_ANALYSIS_BASE_IMAGE_NAME):$(or $(VERSION),$(KFP_ANALYSIS_BASE_IMAGE_TAG))
+PIPELINE_TOOLS_IMAGE = $(BUILD_REGISTRY)/$(KFP_PIPELINE_TOOLS_IMAGE_NAME):$(or $(VERSION),$(KFP_PIPELINE_TOOLS_IMAGE_TAG))
+CONSOLE_APP_IMAGE    = $(BUILD_REGISTRY)/$(CONSOLE_APP_IMAGE_NAME):$(or $(VERSION),$(CONSOLE_IMAGE_TAG))
+CONSOLE_PLUGIN_IMAGE = $(BUILD_REGISTRY)/$(CONSOLE_PLUGIN_IMAGE_NAME):$(or $(VERSION),$(CONSOLE_IMAGE_TAG))
 
 # ============================================================================
 # Help
@@ -217,63 +250,61 @@ help-all:
 # ============================================================================
 
 install:
-	@set -e; set -a; . $(ENV_FILE); set +a; \
-	: "$${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID must be set in $(ENV_FILE)}"; \
-	: "$${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY must be set in $(ENV_FILE)}"; \
-	: "$${AWS_S3_BUCKET:?AWS_S3_BUCKET must be set in $(ENV_FILE)}"; \
-	: "$${S4_UI_USERNAME:?S4_UI_USERNAME must be set in $(ENV_FILE)}"; \
-	: "$${S4_UI_PASSWORD:?S4_UI_PASSWORD must be set in $(ENV_FILE)}"; \
-	OTEL_NAMESPACE=$${OTEL_NAMESPACE:-$$KFP_NAMESPACE}; \
+	@set -e; \
+	[ -n "$(AWS_ACCESS_KEY_ID)" ] || { echo "AWS_ACCESS_KEY_ID must be set" >&2; exit 1; }; \
+	[ -n "$(AWS_SECRET_ACCESS_KEY)" ] || { echo "AWS_SECRET_ACCESS_KEY must be set" >&2; exit 1; }; \
+	[ -n "$(AWS_S3_BUCKET)" ] || { echo "AWS_S3_BUCKET must be set" >&2; exit 1; }; \
+	[ -n "$(S4_UI_USERNAME)" ] || { echo "S4_UI_USERNAME must be set" >&2; exit 1; }; \
+	[ -n "$(S4_UI_PASSWORD)" ] || { echo "S4_UI_PASSWORD must be set" >&2; exit 1; }; \
 	\
 	echo "==> Creating namespaces..." && \
 	set -- agent-mesh-for-sw resources/helm \
-		--set "namespace=$$KFP_NAMESPACE" \
+		--set "namespace=$(KFP_NAMESPACE)" \
 		--set "requester=$$(oc whoami)"; \
-	if [ "$(DEPLOY_OTEL)" = "true" ] && [ "$$OTEL_NAMESPACE" != "$$KFP_NAMESPACE" ]; then \
-		set -- "$$@" --set "otel.namespace=$$OTEL_NAMESPACE"; \
+	if [ "$(DEPLOY_OTEL)" = "true" ] && [ "$(OTEL_NAMESPACE)" != "$(KFP_NAMESPACE)" ]; then \
+		set -- "$$@" --set "otel.namespace=$(OTEL_NAMESPACE)"; \
 	fi; \
 	helm template "$$@" -s templates/namespace.yaml | oc apply -f - && \
 	\
 	echo "==> Waiting for OpenShift to inject service CA into odh-trusted-ca-bundle..." && \
-	until oc get configmap odh-trusted-ca-bundle -n $$KFP_NAMESPACE \
+	until oc get configmap odh-trusted-ca-bundle -n $(KFP_NAMESPACE) \
 		-o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null | grep -q CERTIFICATE; do sleep 5; done
 	$(MAKE) prepare-workbench-images
 	@if [ "$(DEPLOY_EMBEDDING_MODEL)" = "true" ]; then \
 		$(MAKE) deploy-embedding-model; \
 	fi
 	$(MAKE) apply-secrets
-	@set -e; set -a; . $(ENV_FILE); set +a; \
-	: "$${KFP_IMAGE_REGISTRY:?KFP_IMAGE_REGISTRY must be set in $(ENV_FILE)}"; \
-	OTEL_NAMESPACE=$${OTEL_NAMESPACE:-$$KFP_NAMESPACE}; \
+	@set -e; \
+	[ -n "$(KFP_IMAGE_REGISTRY)" ] || { echo "KFP_IMAGE_REGISTRY must be set" >&2; exit 1; }; \
 	OTEL_ENABLED=false; \
 	set -- agent-mesh-for-sw resources/helm \
-		--namespace "$$KFP_NAMESPACE" \
+		--namespace "$(KFP_NAMESPACE)" \
 		--create-namespace \
 		--no-hooks \
 		--reset-then-reuse-values \
-		--set "namespace=$$KFP_NAMESPACE" \
+		--set "namespace=$(KFP_NAMESPACE)" \
 		--set "requester=$$(oc whoami)" \
 		--set "repoUrl=$(GIT_REPO_URL)" \
 		--set "repoRef=$(GIT_REPO_BRANCH)" \
-		--set-string "s4.s3.accessKeyId=$$AWS_ACCESS_KEY_ID" \
-		--set-string "s4.s3.secretAccessKey=$$AWS_SECRET_ACCESS_KEY" \
-		--set-string "applicationStorage.bucket=$$AWS_S3_BUCKET" \
+		--set-string "s4.s3.accessKeyId=$(AWS_ACCESS_KEY_ID)" \
+		--set-string "s4.s3.secretAccessKey=$(AWS_SECRET_ACCESS_KEY)" \
+		--set-string "applicationStorage.bucket=$(AWS_S3_BUCKET)" \
 		--set s4.auth.enabled=true \
-		--set-string "s4.auth.username=$$S4_UI_USERNAME" \
-		--set-string "s4.auth.password=$$S4_UI_PASSWORD" \
+		--set-string "s4.auth.username=$(S4_UI_USERNAME)" \
+		--set-string "s4.auth.password=$(S4_UI_PASSWORD)" \
 		--set s4.route.enabled=true \
-		--set "dataGeneration.image.registry=$$KFP_IMAGE_REGISTRY" \
-		--set "dataGeneration.image.name=$$KFP_DATA_GENERATION_BASE_IMAGE_NAME" \
-		--set "dataGeneration.image.tag=$$KFP_DATA_GENERATION_BASE_IMAGE_TAG" \
-		--set "graphrag.image.registry=$$KFP_IMAGE_REGISTRY" \
-		--set "graphrag.image.name=$$KFP_INDEXING_BASE_IMAGE_NAME" \
-		--set "graphrag.image.tag=$$KFP_INDEXING_BASE_IMAGE_TAG" \
-		--set "analysis.image.registry=$$KFP_IMAGE_REGISTRY" \
-		--set "analysis.image.name=$$KFP_ANALYSIS_BASE_IMAGE_NAME" \
-		--set "analysis.image.tag=$$KFP_ANALYSIS_BASE_IMAGE_TAG" \
-		--set "pipelineTools.image.registry=$$KFP_IMAGE_REGISTRY" \
-		--set "pipelineTools.image.name=$$KFP_PIPELINE_TOOLS_IMAGE_NAME" \
-		--set "pipelineTools.image.tag=$$KFP_PIPELINE_TOOLS_IMAGE_TAG" \
+		--set "dataGeneration.image.registry=$(KFP_IMAGE_REGISTRY)" \
+		--set "dataGeneration.image.name=$(KFP_DATA_GENERATION_BASE_IMAGE_NAME)" \
+		--set "dataGeneration.image.tag=$(KFP_DATA_GENERATION_BASE_IMAGE_TAG)" \
+		--set "graphrag.image.registry=$(KFP_IMAGE_REGISTRY)" \
+		--set "graphrag.image.name=$(KFP_INDEXING_BASE_IMAGE_NAME)" \
+		--set "graphrag.image.tag=$(KFP_INDEXING_BASE_IMAGE_TAG)" \
+		--set "analysis.image.registry=$(KFP_IMAGE_REGISTRY)" \
+		--set "analysis.image.name=$(KFP_ANALYSIS_BASE_IMAGE_NAME)" \
+		--set "analysis.image.tag=$(KFP_ANALYSIS_BASE_IMAGE_TAG)" \
+		--set "pipelineTools.image.registry=$(KFP_IMAGE_REGISTRY)" \
+		--set "pipelineTools.image.name=$(KFP_PIPELINE_TOOLS_IMAGE_NAME)" \
+		--set "pipelineTools.image.tag=$(KFP_PIPELINE_TOOLS_IMAGE_TAG)" \
 		--set "clusterDomain=$(CLUSTER_DOMAIN)" \
 		--set "mlflowGatewayHost=$(GATEWAY_HOST)" \
 		--set "imageStreams.namespace=$(WORKBENCH_IMAGESTREAM_NAMESPACE)" \
@@ -281,26 +312,24 @@ install:
 		--set deployNotebooks=true \
 		--set otel.enabled=false; \
 	if [ "$(DEPLOY_OTEL)" = "true" ] && \
-	   [ -n "$${OTEL_NAMESPACE:-}" ] && [ -n "$${OTEL_SERVICE_NAME:-}" ] && \
+	   [ -n "$(OTEL_NAMESPACE)" ] && [ -n "$(OTEL_SERVICE_NAME)" ] && \
 	   oc get crd opentelemetrycollectors.opentelemetry.io >/dev/null 2>&1 && \
 	   oc get crd tempostacks.tempo.grafana.com >/dev/null 2>&1; then \
 		set -- "$$@" \
 			--set otel.enabled=true \
-			--set "otel.namespace=$$OTEL_NAMESPACE" \
-			--set "otel.name=$$OTEL_SERVICE_NAME"; \
+			--set "otel.namespace=$(OTEL_NAMESPACE)" \
+			--set "otel.name=$(OTEL_SERVICE_NAME)"; \
 	fi; \
 	echo "==> Installing Agent Mesh Helm release..."; \
 	helm upgrade --install "$$@"; \
 	echo "==> Waiting for pipeline server..."; \
-	until oc get deployment ds-pipeline-dspa -n $$KFP_NAMESPACE >/dev/null 2>&1; do sleep 5; done; \
-	oc wait deployment/ds-pipeline-dspa -n $$KFP_NAMESPACE --for=condition=Available --timeout=300s
-	@set -a && . $(ENV_FILE) && set +a && \
-	if [ "$$ASSET_LOADER" = "mlflow" ]; then \
+	until oc get deployment ds-pipeline-dspa -n $(KFP_NAMESPACE) >/dev/null 2>&1; do sleep 5; done; \
+	oc wait deployment/ds-pipeline-dspa -n $(KFP_NAMESPACE) --for=condition=Available --timeout=300s
+	@if [ "$(ASSET_LOADER)" = "mlflow" ]; then \
 		echo "==> Preloading MLflow assets..." && \
 		$(MAKE) upload-mlflow-assets; \
 	fi
-	@set -a && . $(ENV_FILE) && set +a && \
-	if [ "$$ASSET_LOADER" = "mlflow" ] && [ "$$INSTALL_PREBUILT_INDEX" = "true" ]; then \
+	@if [ "$(ASSET_LOADER)" = "mlflow" ] && [ "$(INSTALL_PREBUILT_INDEX)" = "true" ]; then \
 		echo "==> Uploading prebuilt index..." && \
 		$(MAKE) upload-prebuilt-index; \
 	fi
@@ -308,32 +337,30 @@ install:
 
 uninstall:
 	@set -eu; \
-	set -a; . "$(ENV_FILE)"; set +a; \
-	: "$${KFP_NAMESPACE:?KFP_NAMESPACE must be set in $(ENV_FILE)}"; \
-	OTEL_NAMESPACE=$${OTEL_NAMESPACE:-$$KFP_NAMESPACE}; \
-	case "$$KFP_NAMESPACE" in default|kube-*|openshift-*|redhat-ods-applications) \
-		echo "Error: refusing to uninstall from protected namespace: $$KFP_NAMESPACE" >&2; exit 1;; \
+	[ -n "$(KFP_NAMESPACE)" ] || { echo "KFP_NAMESPACE must be set" >&2; exit 1; }; \
+	case "$(KFP_NAMESPACE)" in default|kube-*|openshift-*|redhat-ods-applications) \
+		echo "Error: refusing to uninstall from protected namespace: $(KFP_NAMESPACE)" >&2; exit 1;; \
 	esac; \
-	echo "==> Uninstalling Agent Mesh from $$KFP_NAMESPACE"; \
+	echo "==> Uninstalling Agent Mesh from $(KFP_NAMESPACE)"; \
 	echo "==> Stopping upload, pipeline, and ad-hoc Jobs..."; \
-	for resource in $$(oc get job,configmap -n "$$KFP_NAMESPACE" -o name 2>/dev/null || true); do \
+	for resource in $$(oc get job,configmap -n "$(KFP_NAMESPACE)" -o name 2>/dev/null || true); do \
 		case "$$resource" in \
 			job.batch/upload-*|job.batch/run-pipelines|job.batch/run-adhoc-query-*|job.batch/cu-pipeline-*|job.batch/cu-query-*|configmap/adhoc-query-*|configmap/cu-repos-*) \
-				oc delete "$$resource" -n "$$KFP_NAMESPACE" --ignore-not-found;; \
+				oc delete "$$resource" -n "$(KFP_NAMESPACE)" --ignore-not-found;; \
 		esac; \
 	done; \
 	echo "==> Removing Agent Mesh Kubeflow pipeline runs..."; \
-	for workflow in $$(oc get workflows.argoproj.io -n "$$KFP_NAMESPACE" -o name 2>/dev/null || true); do \
+	for workflow in $$(oc get workflows.argoproj.io -n "$(KFP_NAMESPACE)" -o name 2>/dev/null || true); do \
 		case "$${workflow#*/}" in \
 			single-repo-pipeline-*|multi-repo-pipeline-*) \
-				oc delete "$$workflow" -n "$$KFP_NAMESPACE" \
+				oc delete "$$workflow" -n "$(KFP_NAMESPACE)" \
 					--cascade=foreground --wait=true --timeout=2m;; \
 		esac; \
 	done; \
 	echo "==> Removing Helm releases..."; \
-	helm uninstall e5-mistral -n "$$KFP_NAMESPACE" \
+	helm uninstall e5-mistral -n "$(KFP_NAMESPACE)" \
 		--ignore-not-found --cascade foreground --wait --timeout 2m; \
-	helm uninstall agent-mesh-for-sw -n "$$KFP_NAMESPACE" \
+	helm uninstall agent-mesh-for-sw -n "$(KFP_NAMESPACE)" \
 		--ignore-not-found --cascade foreground --wait --timeout 2m; \
 	echo "==> Removing non-Helm resources..."; \
 	oc delete \
@@ -344,53 +371,52 @@ uninstall:
 		route.route.openshift.io/code-understanding-plugin-api \
 		configmap/code-understanding-console-plugin-config \
 		configmap/code-understanding-job-scripts \
-		-n "$$KFP_NAMESPACE" --ignore-not-found; \
+		-n "$(KFP_NAMESPACE)" --ignore-not-found; \
 	oc delete imagestream -n "$(WORKBENCH_IMAGESTREAM_NAMESPACE)" \
-		-l "app.kubernetes.io/part-of=agent-mesh-for-sw,agent-mesh.redhat.com/owner-namespace=$$KFP_NAMESPACE" \
+		-l "app.kubernetes.io/part-of=agent-mesh-for-sw,agent-mesh.redhat.com/owner-namespace=$(KFP_NAMESPACE)" \
 		--ignore-not-found; \
 	oc delete secret git-credentials code-understanding-env \
-		-n "$$KFP_NAMESPACE" --ignore-not-found; \
-	oc delete pvc mariadb-dspa -n "$$KFP_NAMESPACE" \
+		-n "$(KFP_NAMESPACE)" --ignore-not-found; \
+	oc delete pvc mariadb-dspa -n "$(KFP_NAMESPACE)" \
 		--ignore-not-found --wait=true --timeout=300s; \
-	if [ -n "$${OTEL_NAMESPACE:-}" ]; then \
-		oc delete job -n "$$OTEL_NAMESPACE" \
-			-l "app.kubernetes.io/part-of=agent-mesh-for-sw,agent-mesh.redhat.com/owner-namespace=$$KFP_NAMESPACE" \
+	if [ -n "$(OTEL_NAMESPACE)" ]; then \
+		oc delete job -n "$(OTEL_NAMESPACE)" \
+			-l "app.kubernetes.io/part-of=agent-mesh-for-sw,agent-mesh.redhat.com/owner-namespace=$(KFP_NAMESPACE)" \
 			--ignore-not-found; \
-		if [ -n "$${OTEL_SERVICE_NAME:-}" ]; then \
-			for pvc in $$(oc get pvc -n "$$OTEL_NAMESPACE" -o name 2>/dev/null || true); do \
-				case "$${pvc#*/}" in data-tempo-"$$OTEL_SERVICE_NAME"-ingester-*) \
-					oc delete "$$pvc" -n "$$OTEL_NAMESPACE" --ignore-not-found \
+		if [ -n "$(OTEL_SERVICE_NAME)" ]; then \
+			for pvc in $$(oc get pvc -n "$(OTEL_NAMESPACE)" -o name 2>/dev/null || true); do \
+				case "$${pvc#*/}" in data-tempo-"$(OTEL_SERVICE_NAME)"-ingester-*) \
+					oc delete "$$pvc" -n "$(OTEL_NAMESPACE)" --ignore-not-found \
 						--wait=true --timeout=300s;; \
 				esac; \
 			done; \
 		fi; \
 	fi; \
-	echo "==> Agent Mesh uninstall complete. Namespace $$KFP_NAMESPACE was preserved."
+	echo "==> Agent Mesh uninstall complete. Namespace $(KFP_NAMESPACE) was preserved."
 
 deploy-embedding-model:
-	@set -a && . $(ENV_FILE) && set +a && \
-		echo "==> Deploying e5-mistral embedding model..." && \
+	@echo "==> Deploying e5-mistral embedding model..." && \
 		helm upgrade --install e5-mistral resources/helm/e5-mistral \
-			--namespace "$$KFP_NAMESPACE" \
+			--namespace "$(KFP_NAMESPACE)" \
 			--create-namespace
 
 prepare-workbench-images:
-	@set -e; set -a; . $(ENV_FILE); set +a; \
+	@set -e; \
 		echo "==> Registering project workbench images with OpenShift AI..."; \
 		IMAGESTREAMS="$$(helm template agent-mesh-for-sw resources/helm \
-			--namespace "$$KFP_NAMESPACE" \
-			--set "namespace=$$KFP_NAMESPACE" \
+			--namespace "$(KFP_NAMESPACE)" \
+			--set "namespace=$(KFP_NAMESPACE)" \
 			--set imageStreams.enabled=true \
 			--set "imageStreams.namespace=$(WORKBENCH_IMAGESTREAM_NAMESPACE)" \
-			--set "dataGeneration.image.registry=$$KFP_IMAGE_REGISTRY" \
-			--set "dataGeneration.image.name=$$KFP_DATA_GENERATION_BASE_IMAGE_NAME" \
-			--set "dataGeneration.image.tag=$$KFP_DATA_GENERATION_BASE_IMAGE_TAG" \
-			--set "graphrag.image.registry=$$KFP_IMAGE_REGISTRY" \
-			--set "graphrag.image.name=$$KFP_INDEXING_BASE_IMAGE_NAME" \
-			--set "graphrag.image.tag=$$KFP_INDEXING_BASE_IMAGE_TAG" \
-			--set "analysis.image.registry=$$KFP_IMAGE_REGISTRY" \
-			--set "analysis.image.name=$$KFP_ANALYSIS_BASE_IMAGE_NAME" \
-			--set "analysis.image.tag=$$KFP_ANALYSIS_BASE_IMAGE_TAG" \
+			--set "dataGeneration.image.registry=$(KFP_IMAGE_REGISTRY)" \
+			--set "dataGeneration.image.name=$(KFP_DATA_GENERATION_BASE_IMAGE_NAME)" \
+			--set "dataGeneration.image.tag=$(KFP_DATA_GENERATION_BASE_IMAGE_TAG)" \
+			--set "graphrag.image.registry=$(KFP_IMAGE_REGISTRY)" \
+			--set "graphrag.image.name=$(KFP_INDEXING_BASE_IMAGE_NAME)" \
+			--set "graphrag.image.tag=$(KFP_INDEXING_BASE_IMAGE_TAG)" \
+			--set "analysis.image.registry=$(KFP_IMAGE_REGISTRY)" \
+			--set "analysis.image.name=$(KFP_ANALYSIS_BASE_IMAGE_NAME)" \
+			--set "analysis.image.tag=$(KFP_ANALYSIS_BASE_IMAGE_TAG)" \
 			-s templates/workbench-imagestreams.yaml | \
 			oc apply -f - -o name)"; \
 		echo "==> Waiting for project workbench images to import..."; \
@@ -399,37 +425,38 @@ prepare-workbench-images:
 			--timeout=300s $$IMAGESTREAMS
 
 deploy-notebooks: prepare-workbench-images
-	@set -e; set -a; . $(ENV_FILE); set +a; \
+	@set -e; \
 		echo "==> Waiting for DSPA to be fully reconciled..." && \
-		until oc get datasciencepipelinesapplication dspa -n $$KFP_NAMESPACE \
+		until oc get datasciencepipelinesapplication dspa -n $(KFP_NAMESPACE) \
 			-o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null | grep -q "True"; do sleep 5; done && \
 		\
 		echo "==> Deploying notebooks..." && \
 		helm upgrade agent-mesh-for-sw resources/helm \
-			--namespace "$$KFP_NAMESPACE" \
+			--namespace "$(KFP_NAMESPACE)" \
 			--reset-then-reuse-values \
 			--no-hooks \
-			--set namespace="$$KFP_NAMESPACE" \
+			--set namespace="$(KFP_NAMESPACE)" \
 			--set requester="$$(oc whoami)" \
 			--set repoUrl="$(GIT_REPO_URL)" \
 			--set repoRef="$(GIT_REPO_BRANCH)" \
-			--set dataGeneration.image.registry="$$KFP_IMAGE_REGISTRY" \
-			--set dataGeneration.image.name="$$KFP_DATA_GENERATION_BASE_IMAGE_NAME" \
-			--set dataGeneration.image.tag="$$KFP_DATA_GENERATION_BASE_IMAGE_TAG" \
-			--set graphrag.image.registry="$$KFP_IMAGE_REGISTRY" \
-			--set graphrag.image.name="$$KFP_INDEXING_BASE_IMAGE_NAME" \
-			--set graphrag.image.tag="$$KFP_INDEXING_BASE_IMAGE_TAG" \
-			--set analysis.image.registry="$$KFP_IMAGE_REGISTRY" \
-			--set analysis.image.name="$$KFP_ANALYSIS_BASE_IMAGE_NAME" \
-			--set analysis.image.tag="$$KFP_ANALYSIS_BASE_IMAGE_TAG" \
+			--set dataGeneration.image.registry="$(KFP_IMAGE_REGISTRY)" \
+			--set dataGeneration.image.name="$(KFP_DATA_GENERATION_BASE_IMAGE_NAME)" \
+			--set dataGeneration.image.tag="$(KFP_DATA_GENERATION_BASE_IMAGE_TAG)" \
+			--set graphrag.image.registry="$(KFP_IMAGE_REGISTRY)" \
+			--set graphrag.image.name="$(KFP_INDEXING_BASE_IMAGE_NAME)" \
+			--set graphrag.image.tag="$(KFP_INDEXING_BASE_IMAGE_TAG)" \
+			--set analysis.image.registry="$(KFP_IMAGE_REGISTRY)" \
+			--set analysis.image.name="$(KFP_ANALYSIS_BASE_IMAGE_NAME)" \
+			--set analysis.image.tag="$(KFP_ANALYSIS_BASE_IMAGE_TAG)" \
 			--set imageStreams.namespace="$(WORKBENCH_IMAGESTREAM_NAMESPACE)" \
 			--set deployNotebooks=true
 
 apply-secrets:
-	@set -a && . $(ENV_FILE) && set +a && \
-	OTEL_NAMESPACE=$${OTEL_NAMESPACE:-$$KFP_NAMESPACE} && \
-	OTEL_EXPORTER_OTLP_ENDPOINT=$${OTEL_EXPORTER_OTLP_ENDPOINT:-http://$$OTEL_SERVICE_NAME-collector.$$OTEL_NAMESPACE.svc.cluster.local:4318} && \
-	export OTEL_NAMESPACE OTEL_EXPORTER_OTLP_ENDPOINT && \
+	@[ -n "$(AWS_ACCESS_KEY_ID)" ] || { echo "AWS_ACCESS_KEY_ID must be set" >&2; exit 1; }; \
+	[ -n "$(AWS_SECRET_ACCESS_KEY)" ] || { echo "AWS_SECRET_ACCESS_KEY must be set" >&2; exit 1; }; \
+	[ -n "$(AWS_S3_BUCKET)" ] || { echo "AWS_S3_BUCKET must be set" >&2; exit 1; }; \
+	[ -n "$(S4_UI_USERNAME)" ] || { echo "S4_UI_USERNAME must be set" >&2; exit 1; }; \
+	[ -n "$(S4_UI_PASSWORD)" ] || { echo "S4_UI_PASSWORD must be set" >&2; exit 1; }; \
 	if [ "$(DEPLOY_EMBEDDING_MODEL)" = "true" ]; then \
 		: "$${EMBED_LLM_TOKEN:=dummy}"; \
 		: "$${EMBED_LLM_API_BASE:=http://e5-mistral:8000/v1}"; \
@@ -441,38 +468,37 @@ apply-secrets:
 	\
 	echo "==> Applying git-credentials secret..." && \
 	oc create secret generic git-credentials \
-		--from-literal=GIT_USERNAME="$$GIT_USERNAME" \
-		--from-literal=GIT_TOKEN="$$GIT_TOKEN" \
-		-n $$KFP_NAMESPACE --dry-run=client -o yaml | oc apply -f - && \
+		--from-literal=GIT_USERNAME="$(GIT_USERNAME)" \
+		--from-literal=GIT_TOKEN="$(GIT_TOKEN)" \
+		-n $(KFP_NAMESPACE) --dry-run=client -o yaml | oc apply -f - && \
 	\
 	echo "==> Recreating secret code-understanding-env..." && \
-	DEFAULTED_ENV_FILE=$$(mktemp) && \
-	trap 'rm -f "$$DEFAULTED_ENV_FILE"' 0 && \
-	cp "$(ENV_FILE)" "$$DEFAULTED_ENV_FILE" && \
-	printf '\n' >> "$$DEFAULTED_ENV_FILE" && \
-	for key in $(DEFAULTED_ENV_VARS); do \
-		if ! grep -q "^$$key=" "$(ENV_FILE)"; then \
-			printf '%s=%s\n' "$$key" "$$(printenv "$$key")" >> "$$DEFAULTED_ENV_FILE"; \
+	SECRET_ENV_FILE=$$(mktemp) && \
+	trap 'rm -f "$$SECRET_ENV_FILE"' 0 && \
+	for key in $(SECRET_ENV_VARS); do \
+		if printenv "$$key" >/dev/null 2>&1; then \
+			printf '%s=' "$$key" >> "$$SECRET_ENV_FILE"; \
+			printenv "$$key" >> "$$SECRET_ENV_FILE"; \
 		fi; \
 	done && \
-	oc delete secret code-understanding-env -n $$KFP_NAMESPACE --ignore-not-found=true && \
-	oc create secret generic code-understanding-env --from-env-file "$$DEFAULTED_ENV_FILE" -n $$KFP_NAMESPACE && \
+	oc delete secret code-understanding-env -n $(KFP_NAMESPACE) --ignore-not-found=true && \
+	oc create secret generic code-understanding-env --from-env-file "$$SECRET_ENV_FILE" -n $(KFP_NAMESPACE) && \
 	\
-	REPO_LIST="$$GIT_REPO_LIST" && \
-	if [ -n "$$PIPELINE_GIT_REPO_LIST" ] && [ -f "$$PIPELINE_GIT_REPO_LIST" ]; then \
+	REPO_LIST="$(GIT_REPO_LIST)" && \
+	if [ -n "$(PIPELINE_GIT_REPO_LIST)" ] && [ -f "$(PIPELINE_GIT_REPO_LIST)" ]; then \
 		echo "==> PIPELINE_GIT_REPO_LIST is set, using instead of GIT_REPO_LIST"; \
-		REPO_LIST="$$PIPELINE_GIT_REPO_LIST"; \
+		REPO_LIST="$(PIPELINE_GIT_REPO_LIST)"; \
 	fi && \
 	if [ -n "$$REPO_LIST" ] && [ -f "$$REPO_LIST" ]; then \
-		oc set data secret/code-understanding-env -n $$KFP_NAMESPACE \
+		oc set data secret/code-understanding-env -n $(KFP_NAMESPACE) \
 			--from-file=GIT_REPO_LIST_CONTENTS="$$REPO_LIST"; \
 	fi || true && \
-	oc patch secret code-understanding-env -n $$KFP_NAMESPACE \
+	oc patch secret code-understanding-env -n $(KFP_NAMESPACE) \
 		--type=merge \
-		-p "{\"stringData\":{\"MLFLOW_NAMESPACE\":\"$$KFP_NAMESPACE\"}}" && \
+		-p '{"stringData":{"MLFLOW_NAMESPACE":"$(KFP_NAMESPACE)"}}' && \
 	if [ -n "$(GATEWAY_HOST)" ]; then \
 		echo "==> Patching MLFLOW_TRACKING_URI with external gateway URL..." && \
-		oc patch secret code-understanding-env -n $$KFP_NAMESPACE \
+		oc patch secret code-understanding-env -n $(KFP_NAMESPACE) \
 			--type=merge \
 			-p "{\"stringData\":{\"MLFLOW_TRACKING_URI\":\"https://$(GATEWAY_HOST)/mlflow\"}}"; \
 	fi
@@ -485,9 +511,7 @@ helm-lint:
 	helm lint $(CHART_DIR)
 
 helm-template:
-	@set -a; [ ! -f "$(ENV_FILE)" ] || . "$(ENV_FILE)"; set +a; \
-	VERIFY_NAMESPACE="$(NAMESPACE)"; \
-	: "$${VERIFY_NAMESPACE:=$${KFP_NAMESPACE:-demo}}"; \
+	@VERIFY_NAMESPACE="$(or $(NAMESPACE),$(KFP_NAMESPACE),demo)"; \
 	helm template $(RELEASE) $(CHART_DIR) \
 		--namespace "$$VERIFY_NAMESPACE" \
 		--set-string "namespace=$$VERIFY_NAMESPACE"
@@ -501,10 +525,9 @@ verify-secrets:
 	@echo "Tracked-file secret scan passed."
 
 verify-deploy: verify-secrets
-	@set -eu; set -a; . "$(ENV_FILE)"; set +a; \
-	VERIFY_NAMESPACE="$(NAMESPACE)"; \
-	: "$${VERIFY_NAMESPACE:=$${KFP_NAMESPACE:-}}"; \
-	: "$${VERIFY_NAMESPACE:?Set NAMESPACE or KFP_NAMESPACE in $(ENV_FILE)}"; \
+	@set -eu; \
+	VERIFY_NAMESPACE="$(or $(NAMESPACE),$(KFP_NAMESPACE))"; \
+	: "$${VERIFY_NAMESPACE:?Set NAMESPACE or KFP_NAMESPACE}"; \
 	echo "==> Verifying Helm release $(RELEASE) in $$VERIFY_NAMESPACE..."; \
 	helm status $(RELEASE) -n "$$VERIFY_NAMESPACE" >/dev/null; \
 	echo "==> Waiting for S4..."; \
@@ -527,11 +550,11 @@ verify-deploy: verify-secrets
 		helm status e5-mistral -n "$$VERIFY_NAMESPACE" >/dev/null; \
 	fi; \
 	if [ "$(DEPLOY_OTEL)" = true ]; then \
-		: "$${OTEL_NAMESPACE:?OTEL_NAMESPACE must be set in $(ENV_FILE)}"; \
-		: "$${OTEL_SERVICE_NAME:?OTEL_SERVICE_NAME must be set in $(ENV_FILE)}"; \
+		[ -n "$(OTEL_NAMESPACE)" ] || { echo "OTEL_NAMESPACE must be set" >&2; exit 1; }; \
+		[ -n "$(OTEL_SERVICE_NAME)" ] || { echo "OTEL_SERVICE_NAME must be set" >&2; exit 1; }; \
 		echo "==> Verifying OpenTelemetry and Tempo resources..."; \
-		oc get opentelemetrycollector "$$OTEL_SERVICE_NAME" -n "$$OTEL_NAMESPACE" >/dev/null; \
-		oc get tempostack "$$OTEL_SERVICE_NAME" -n "$$OTEL_NAMESPACE" >/dev/null; \
+		oc get opentelemetrycollector "$(OTEL_SERVICE_NAME)" -n "$(OTEL_NAMESPACE)" >/dev/null; \
+		oc get tempostack "$(OTEL_SERVICE_NAME)" -n "$(OTEL_NAMESPACE)" >/dev/null; \
 	fi; \
 	echo "verify-deploy: PASS namespace=$$VERIFY_NAMESPACE release=$(RELEASE)"
 
@@ -566,206 +589,172 @@ lint:
 build-images: build-all-images push-all-images
 
 build-all-images:
-	@if [ -f "$(ENV_FILE)" ]; then set -a && . "$(ENV_FILE)" && set +a; fi && \
-	REGISTRY="$(REGISTRY)" && \
-	VERSION="$(VERSION)" && \
-	: "$${REGISTRY:=$$KFP_IMAGE_REGISTRY}" && \
-	CONSOLE_TAG="$${VERSION:-$$CONSOLE_IMAGE_TAG}" && \
-	: "$${CONSOLE_TAG:?Set VERSION or CONSOLE_IMAGE_TAG to build console images}" && \
-	DATAGEN_IMG="$$REGISTRY/$$KFP_DATA_GENERATION_BASE_IMAGE_NAME:$${VERSION:-$$KFP_DATA_GENERATION_BASE_IMAGE_TAG}" && \
-	INDEX_IMG="$$REGISTRY/$$KFP_INDEXING_BASE_IMAGE_NAME:$${VERSION:-$$KFP_INDEXING_BASE_IMAGE_TAG}" && \
-	ANALYSIS_IMG="$$REGISTRY/$$KFP_ANALYSIS_BASE_IMAGE_NAME:$${VERSION:-$$KFP_ANALYSIS_BASE_IMAGE_TAG}" && \
-	TOOLS_IMG="$$REGISTRY/$$KFP_PIPELINE_TOOLS_IMAGE_NAME:$${VERSION:-$$KFP_PIPELINE_TOOLS_IMAGE_TAG}" && \
-	CONSOLE_APP_IMG="$$REGISTRY/$$CONSOLE_APP_IMAGE_NAME:$$CONSOLE_TAG" && \
-	CONSOLE_PLUGIN_IMG="$$REGISTRY/$$CONSOLE_PLUGIN_IMAGE_NAME:$$CONSOLE_TAG" && \
-	echo "==> Building data generation image: $$DATAGEN_IMG" && \
-	$(IMAGE_BUILD) -t "$$DATAGEN_IMG" -f resources/images/data-generation/Containerfile resources/images/data-generation && \
-	echo "==> Building indexing image: $$INDEX_IMG" && \
-	$(IMAGE_BUILD) -t "$$INDEX_IMG" -f resources/images/data-indexing/Containerfile resources/images/data-indexing && \
-	if [ "$$ANALYSIS_IMG" = "$$INDEX_IMG" ]; then \
+	@[ -n "$(or $(VERSION),$(CONSOLE_IMAGE_TAG))" ] || { echo "Set VERSION or CONSOLE_IMAGE_TAG to build console images" >&2; exit 1; }
+	@echo "==> Building data generation image: $(DATAGEN_IMAGE)" && \
+	$(IMAGE_BUILD) -t "$(DATAGEN_IMAGE)" -f resources/images/data-generation/Containerfile resources/images/data-generation && \
+	echo "==> Building indexing image: $(INDEX_IMAGE)" && \
+	$(IMAGE_BUILD) -t "$(INDEX_IMAGE)" -f resources/images/data-indexing/Containerfile resources/images/data-indexing && \
+	if [ "$(ANALYSIS_IMAGE)" = "$(INDEX_IMAGE)" ]; then \
 		echo "==> Skipping analysis image build; it uses the indexing image."; \
 	else \
-		echo "==> Building analysis image: $$ANALYSIS_IMG" && \
-		$(IMAGE_BUILD) -t "$$ANALYSIS_IMG" -f resources/images/data-indexing/Containerfile resources/images/data-indexing; \
+		echo "==> Building analysis image: $(ANALYSIS_IMAGE)" && \
+		$(IMAGE_BUILD) -t "$(ANALYSIS_IMAGE)" -f resources/images/data-indexing/Containerfile resources/images/data-indexing; \
 	fi && \
-	echo "==> Building pipeline-tools image: $$TOOLS_IMG" && \
-	$(IMAGE_BUILD) -t "$$TOOLS_IMG" -f resources/images/pipeline-tools/Containerfile resources/images/pipeline-tools && \
-	echo "==> Building console application image: $$CONSOLE_APP_IMG" && \
-	$(IMAGE_BUILD) -t "$$CONSOLE_APP_IMG" -f ui/Dockerfile . && \
-	echo "==> Building console plugin image: $$CONSOLE_PLUGIN_IMG" && \
-	$(IMAGE_BUILD) -t "$$CONSOLE_PLUGIN_IMG" -f console-plugin/Dockerfile console-plugin
+	echo "==> Building pipeline-tools image: $(PIPELINE_TOOLS_IMAGE)" && \
+	$(IMAGE_BUILD) -t "$(PIPELINE_TOOLS_IMAGE)" -f resources/images/pipeline-tools/Containerfile resources/images/pipeline-tools && \
+	echo "==> Building console application image: $(CONSOLE_APP_IMAGE)" && \
+	$(IMAGE_BUILD) -t "$(CONSOLE_APP_IMAGE)" -f ui/Dockerfile . && \
+	echo "==> Building console plugin image: $(CONSOLE_PLUGIN_IMAGE)" && \
+	$(IMAGE_BUILD) -t "$(CONSOLE_PLUGIN_IMAGE)" -f console-plugin/Dockerfile console-plugin
 
 push-all-images:
-	@if [ -f "$(ENV_FILE)" ]; then set -a && . "$(ENV_FILE)" && set +a; fi && \
-	REGISTRY="$(REGISTRY)" && \
-	VERSION="$(VERSION)" && \
-	: "$${REGISTRY:=$$KFP_IMAGE_REGISTRY}" && \
-	CONSOLE_TAG="$${VERSION:-$$CONSOLE_IMAGE_TAG}" && \
-	: "$${CONSOLE_TAG:?Set VERSION or CONSOLE_IMAGE_TAG to push console images}" && \
-	DATAGEN_IMG="$$REGISTRY/$$KFP_DATA_GENERATION_BASE_IMAGE_NAME:$${VERSION:-$$KFP_DATA_GENERATION_BASE_IMAGE_TAG}" && \
-	INDEX_IMG="$$REGISTRY/$$KFP_INDEXING_BASE_IMAGE_NAME:$${VERSION:-$$KFP_INDEXING_BASE_IMAGE_TAG}" && \
-	ANALYSIS_IMG="$$REGISTRY/$$KFP_ANALYSIS_BASE_IMAGE_NAME:$${VERSION:-$$KFP_ANALYSIS_BASE_IMAGE_TAG}" && \
-	TOOLS_IMG="$$REGISTRY/$$KFP_PIPELINE_TOOLS_IMAGE_NAME:$${VERSION:-$$KFP_PIPELINE_TOOLS_IMAGE_TAG}" && \
-	CONSOLE_APP_IMG="$$REGISTRY/$$CONSOLE_APP_IMAGE_NAME:$$CONSOLE_TAG" && \
-	CONSOLE_PLUGIN_IMG="$$REGISTRY/$$CONSOLE_PLUGIN_IMAGE_NAME:$$CONSOLE_TAG" && \
-	echo "==> Pushing data generation image: $$DATAGEN_IMG" && \
-	$(IMAGE_PUSH) "$$DATAGEN_IMG" && \
-	echo "==> Pushing indexing image: $$INDEX_IMG" && \
-	$(IMAGE_PUSH) "$$INDEX_IMG" && \
-	if [ "$$ANALYSIS_IMG" = "$$INDEX_IMG" ]; then \
+	@[ -n "$(or $(VERSION),$(CONSOLE_IMAGE_TAG))" ] || { echo "Set VERSION or CONSOLE_IMAGE_TAG to push console images" >&2; exit 1; }
+	@echo "==> Pushing data generation image: $(DATAGEN_IMAGE)" && \
+	$(IMAGE_PUSH) "$(DATAGEN_IMAGE)" && \
+	echo "==> Pushing indexing image: $(INDEX_IMAGE)" && \
+	$(IMAGE_PUSH) "$(INDEX_IMAGE)" && \
+	if [ "$(ANALYSIS_IMAGE)" = "$(INDEX_IMAGE)" ]; then \
 		echo "==> Skipping analysis image push; it uses the indexing image."; \
 	else \
-		echo "==> Pushing analysis image: $$ANALYSIS_IMG" && \
-		$(IMAGE_PUSH) "$$ANALYSIS_IMG"; \
+		echo "==> Pushing analysis image: $(ANALYSIS_IMAGE)" && \
+		$(IMAGE_PUSH) "$(ANALYSIS_IMAGE)"; \
 	fi && \
-	echo "==> Pushing pipeline-tools image: $$TOOLS_IMG" && \
-	$(IMAGE_PUSH) "$$TOOLS_IMG" && \
-	echo "==> Pushing console application image: $$CONSOLE_APP_IMG" && \
-	$(IMAGE_PUSH) "$$CONSOLE_APP_IMG" && \
-	echo "==> Pushing console plugin image: $$CONSOLE_PLUGIN_IMG" && \
-	$(IMAGE_PUSH) "$$CONSOLE_PLUGIN_IMG"
+	echo "==> Pushing pipeline-tools image: $(PIPELINE_TOOLS_IMAGE)" && \
+	$(IMAGE_PUSH) "$(PIPELINE_TOOLS_IMAGE)" && \
+	echo "==> Pushing console application image: $(CONSOLE_APP_IMAGE)" && \
+	$(IMAGE_PUSH) "$(CONSOLE_APP_IMAGE)" && \
+	echo "==> Pushing console plugin image: $(CONSOLE_PLUGIN_IMAGE)" && \
+	$(IMAGE_PUSH) "$(CONSOLE_PLUGIN_IMAGE)"
 
 # ============================================================================
 # Pipelines and assets
 # ============================================================================
 
 upload-pipelines:
-	@set -a && . $(ENV_FILE) && set +a && \
-	\
-	echo "==> Waiting for pipeline server to be ready..." && \
-	until oc get deployment ds-pipeline-dspa -n $$KFP_NAMESPACE 2>/dev/null; do sleep 5; done && \
-	oc wait deployment/ds-pipeline-dspa -n $$KFP_NAMESPACE --for=condition=Available --timeout=300s && \
+	@echo "==> Waiting for pipeline server to be ready..." && \
+	until oc get deployment ds-pipeline-dspa -n $(KFP_NAMESPACE) 2>/dev/null; do sleep 5; done && \
+	oc wait deployment/ds-pipeline-dspa -n $(KFP_NAMESPACE) --for=condition=Available --timeout=300s && \
 	\
 	echo "==> Uploading Kubeflow pipelines..." && \
-	oc delete job upload-kubeflow-pipelines -n $$KFP_NAMESPACE --ignore-not-found=true && \
+	oc delete job upload-kubeflow-pipelines -n $(KFP_NAMESPACE) --ignore-not-found=true && \
 	helm template agent-mesh-for-sw resources/helm \
-		--set namespace="$$KFP_NAMESPACE" \
+		--set namespace="$(KFP_NAMESPACE)" \
 		--set requester="$$(oc whoami)" \
 		--set repoUrl="$(GIT_REPO_URL)" \
 		--set repoRef="$(GIT_REPO_BRANCH)" \
-		--set pipelineTools.image.registry="$$KFP_IMAGE_REGISTRY" \
-		--set pipelineTools.image.name="$$KFP_PIPELINE_TOOLS_IMAGE_NAME" \
-		--set pipelineTools.image.tag="$$KFP_PIPELINE_TOOLS_IMAGE_TAG" \
-		-s templates/upload-pipelines-job.yaml | oc apply -n $$KFP_NAMESPACE -f -
+		--set pipelineTools.image.registry="$(KFP_IMAGE_REGISTRY)" \
+		--set pipelineTools.image.name="$(KFP_PIPELINE_TOOLS_IMAGE_NAME)" \
+		--set pipelineTools.image.tag="$(KFP_PIPELINE_TOOLS_IMAGE_TAG)" \
+		-s templates/upload-pipelines-job.yaml | oc apply -n $(KFP_NAMESPACE) -f -
 
 upload-mlflow-assets:
-	@set -a && . $(ENV_FILE) && set +a && \
-	\
-	echo "==> Deleting existing upload-assets job..." && \
-	oc delete job upload-assets -n $$KFP_NAMESPACE --ignore-not-found=true && \
+	@echo "==> Deleting existing upload-assets job..." && \
+	oc delete job upload-assets -n $(KFP_NAMESPACE) --ignore-not-found=true && \
 	\
 	echo "==> Submitting upload-assets job..." && \
 	helm template agent-mesh-for-sw resources/helm \
-		--set namespace="$$KFP_NAMESPACE" \
+		--set namespace="$(KFP_NAMESPACE)" \
 		--set requester="$$(oc whoami)" \
 		--set repoUrl="$(GIT_REPO_URL)" \
 		--set repoRef="$(GIT_REPO_BRANCH)" \
-		--set pipelineTools.image.registry="$$KFP_IMAGE_REGISTRY" \
-		--set pipelineTools.image.name="$$KFP_PIPELINE_TOOLS_IMAGE_NAME" \
-		--set pipelineTools.image.tag="$$KFP_PIPELINE_TOOLS_IMAGE_TAG" \
+		--set pipelineTools.image.registry="$(KFP_IMAGE_REGISTRY)" \
+		--set pipelineTools.image.name="$(KFP_PIPELINE_TOOLS_IMAGE_NAME)" \
+		--set pipelineTools.image.tag="$(KFP_PIPELINE_TOOLS_IMAGE_TAG)" \
 		--set mlflowGatewayHost="$(GATEWAY_HOST)" \
-		-s templates/upload-assets-job.yaml | oc apply -n $$KFP_NAMESPACE -f -
+		-s templates/upload-assets-job.yaml | oc apply -n $(KFP_NAMESPACE) -f -
 
 upload-prebuilt-index:
-	@set -a && . $(ENV_FILE) && set +a && \
-	\
-	echo "==> Deleting existing prebuilt-index upload job..." && \
-	oc delete job upload-prebuilt-index -n $$KFP_NAMESPACE --ignore-not-found=true && \
+	@echo "==> Deleting existing prebuilt-index upload job..." && \
+	oc delete job upload-prebuilt-index -n $(KFP_NAMESPACE) --ignore-not-found=true && \
 	\
 	echo "==> Submitting prebuilt-index upload job..." && \
 	helm template agent-mesh-for-sw resources/helm \
-		--set namespace="$$KFP_NAMESPACE" \
+		--set namespace="$(KFP_NAMESPACE)" \
 		--set requester="$$(oc whoami)" \
 		--set repoUrl="$(GIT_REPO_URL)" \
 		--set repoRef="$(GIT_REPO_BRANCH)" \
-		--set pipelineTools.image.registry="$$KFP_IMAGE_REGISTRY" \
-		--set pipelineTools.image.name="$$KFP_PIPELINE_TOOLS_IMAGE_NAME" \
-		--set pipelineTools.image.tag="$$KFP_PIPELINE_TOOLS_IMAGE_TAG" \
+		--set pipelineTools.image.registry="$(KFP_IMAGE_REGISTRY)" \
+		--set pipelineTools.image.name="$(KFP_PIPELINE_TOOLS_IMAGE_NAME)" \
+		--set pipelineTools.image.tag="$(KFP_PIPELINE_TOOLS_IMAGE_TAG)" \
 		--set mlflowGatewayHost="$(GATEWAY_HOST)" \
 		--set prebuiltIndex.enabled=true \
-		-s templates/upload-prebuilt-index-job.yaml | oc apply -n $$KFP_NAMESPACE -f - && \
+		-s templates/upload-prebuilt-index-job.yaml | oc apply -n $(KFP_NAMESPACE) -f - && \
 	\
 	echo "==> Waiting for prebuilt-index upload to complete..." && \
-	oc wait --for=condition=complete job/upload-prebuilt-index -n $$KFP_NAMESPACE --timeout=120s; JOB_EXIT=$$?; \
+	oc wait --for=condition=complete job/upload-prebuilt-index -n $(KFP_NAMESPACE) --timeout=120s; JOB_EXIT=$$?; \
 	if [ $$JOB_EXIT -eq 0 ]; then \
-		oc logs job/upload-prebuilt-index -n $$KFP_NAMESPACE | grep -E 'Uploaded prebuilt index bundle|already installed' || true; \
+		oc logs job/upload-prebuilt-index -n $(KFP_NAMESPACE) | grep -E 'Uploaded prebuilt index bundle|already installed' || true; \
 	else \
-		echo "Prebuilt-index upload job failed; inspect it with: oc logs job/upload-prebuilt-index -n $$KFP_NAMESPACE"; \
+		echo "Prebuilt-index upload job failed; inspect it with: oc logs job/upload-prebuilt-index -n $(KFP_NAMESPACE)"; \
 	fi; \
 	exit $$JOB_EXIT
 
 run-adhoc-query:
 	@[ -z "$(QUESTION_FILE)" ] && { echo "Error: QUESTION_FILE is required: generate it via wrappers/adhoc.sh." >&2; exit 1; } || true
-	@set -a && . $(ENV_FILE) && set +a && \
-	JOB_ID="$$(date +%Y%m%d%H%M%S)$$(printf '%04x' $$((RANDOM)))" && \
+	@JOB_ID="$$(date +%Y%m%d%H%M%S)$$(printf '%04x' $$((RANDOM)))" && \
 	USE_GLOBAL=1 && \
-	if [ -n "$$GIT_REPO" ]; then USE_GLOBAL=0; fi && \
+	if [ -n "$(GIT_REPO)" ]; then USE_GLOBAL=0; fi && \
 	\
 	echo "==> Storing query parameters (job: $$JOB_ID)..." && \
 	oc create configmap adhoc-query-$$JOB_ID \
 		--from-file=question=$(QUESTION_FILE) \
-		-n $$KFP_NAMESPACE && \
+		-n $(KFP_NAMESPACE) && \
 	\
 	echo "==> Submitting adhoc query job..." && \
 	helm template agent-mesh-for-sw resources/helm \
-		--set namespace="$$KFP_NAMESPACE" \
+		--set namespace="$(KFP_NAMESPACE)" \
 		--set repoUrl="$(GIT_REPO_URL)" \
 		--set repoRef="$(GIT_REPO_BRANCH)" \
 		--set adhocQuery.run=true \
 		--set-string adhocQuery.jobId="$$JOB_ID" \
 		--set-string adhocQuery.useGlobal="$$USE_GLOBAL" \
-		--set-string adhocQuery.gitRepo="$$GIT_REPO" \
-		--set-string adhocQuery.gitBranch="$$GIT_BRANCH" \
+		--set-string adhocQuery.gitRepo="$(GIT_REPO)" \
+		--set-string adhocQuery.gitBranch="$(GIT_BRANCH)" \
 		--set-string adhocQuery.retryCount="$${RETRY_COUNT:-3}" \
-		--set analysis.image.registry="$$KFP_IMAGE_REGISTRY" \
-		--set analysis.image.name="$$KFP_ANALYSIS_BASE_IMAGE_NAME" \
-		--set analysis.image.tag="$$KFP_ANALYSIS_BASE_IMAGE_TAG" \
-		-s templates/run-adhoc-query-job.yaml | oc apply -n $$KFP_NAMESPACE -f - && \
+		--set analysis.image.registry="$(KFP_IMAGE_REGISTRY)" \
+		--set analysis.image.name="$(KFP_ANALYSIS_BASE_IMAGE_NAME)" \
+		--set analysis.image.tag="$(KFP_ANALYSIS_BASE_IMAGE_TAG)" \
+		-s templates/run-adhoc-query-job.yaml | oc apply -n $(KFP_NAMESPACE) -f - && \
 	\
 	echo "==> Waiting for query to complete..." && \
-	oc wait job/run-adhoc-query-$$JOB_ID --for=condition=complete --timeout=1800s -n $$KFP_NAMESPACE; LOG_EXIT=$$?; \
-	oc logs job/run-adhoc-query-$$JOB_ID -n $$KFP_NAMESPACE; \
-	oc delete configmap adhoc-query-$$JOB_ID -n $$KFP_NAMESPACE --ignore-not-found=true; \
+	oc wait job/run-adhoc-query-$$JOB_ID --for=condition=complete --timeout=1800s -n $(KFP_NAMESPACE); LOG_EXIT=$$?; \
+	oc logs job/run-adhoc-query-$$JOB_ID -n $(KFP_NAMESPACE); \
+	oc delete configmap adhoc-query-$$JOB_ID -n $(KFP_NAMESPACE) --ignore-not-found=true; \
 	exit $$LOG_EXIT
 
 run-pipelines:
-	@set -a && . $(ENV_FILE) && set +a && \
-	\
-	[ -n "$(PIPELINE_GIT_REPO)" ]   && oc patch secret code-understanding-env -n $$KFP_NAMESPACE \
+	@[ -n "$(PIPELINE_GIT_REPO)" ]   && oc patch secret code-understanding-env -n $(KFP_NAMESPACE) \
 		--type=merge -p '{"stringData":{"GIT_REPO":"$(PIPELINE_GIT_REPO)"}}' || true && \
-	[ -n "$(PIPELINE_GIT_BRANCH)" ] && oc patch secret code-understanding-env -n $$KFP_NAMESPACE \
+	[ -n "$(PIPELINE_GIT_BRANCH)" ] && oc patch secret code-understanding-env -n $(KFP_NAMESPACE) \
 		--type=merge -p '{"stringData":{"GIT_BRANCH":"$(PIPELINE_GIT_BRANCH)"}}' || true && \
 	echo "==> Submitting run-pipelines job..." && \
-	oc delete job run-pipelines -n $$KFP_NAMESPACE --ignore-not-found=true && \
+	oc delete job run-pipelines -n $(KFP_NAMESPACE) --ignore-not-found=true && \
 	helm template agent-mesh-for-sw resources/helm \
-		--set namespace="$$KFP_NAMESPACE" \
+		--set namespace="$(KFP_NAMESPACE)" \
 		--set repoUrl="$(GIT_REPO_URL)" \
 		--set repoRef="$(GIT_REPO_BRANCH)" \
 		--set runPipelines.run=true \
 		--set-string runPipelines.args="$${ARGS:---single-repo}" \
-		--set-string runPipelines.targetPath="$${KFP_DATA_GENERATION_OUTPUT_PATH:-target}" \
-		--set-string runPipelines.graphragSourcePath="$${KFP_DATA_INDEXING_OUTPUT_PATH:-graph_rag_app/source}" \
-		--set pipelineTools.image.registry="$$KFP_IMAGE_REGISTRY" \
-		--set pipelineTools.image.name="$$KFP_PIPELINE_TOOLS_IMAGE_NAME" \
-		--set pipelineTools.image.tag="$$KFP_PIPELINE_TOOLS_IMAGE_TAG" \
-		-s templates/run-pipelines-job.yaml | oc apply -n $$KFP_NAMESPACE -f - && \
+		--set-string runPipelines.targetPath="$(KFP_DATA_GENERATION_OUTPUT_PATH)" \
+		--set-string runPipelines.graphragSourcePath="$(KFP_DATA_INDEXING_OUTPUT_PATH)" \
+		--set pipelineTools.image.registry="$(KFP_IMAGE_REGISTRY)" \
+		--set pipelineTools.image.name="$(KFP_PIPELINE_TOOLS_IMAGE_NAME)" \
+		--set pipelineTools.image.tag="$(KFP_PIPELINE_TOOLS_IMAGE_TAG)" \
+		-s templates/run-pipelines-job.yaml | oc apply -n $(KFP_NAMESPACE) -f - && \
 	\
 	echo "==> Waiting for run-pipelines container to start..." && \
-	until oc logs job/run-pipelines -n $$KFP_NAMESPACE >/dev/null 2>&1; do sleep 2; done && \
+	until oc logs job/run-pipelines -n $(KFP_NAMESPACE) >/dev/null 2>&1; do sleep 2; done && \
 	\
 	echo "==> Streaming pipeline run results..." && \
-	oc logs -f job/run-pipelines -n $$KFP_NAMESPACE
+	oc logs -f job/run-pipelines -n $(KFP_NAMESPACE)
 
 # ============================================================================
 # Observability
 # ============================================================================
 
 deploy-otel:
-	@set -a && . $(ENV_FILE) && set +a && \
-	OTEL_NAMESPACE=$${OTEL_NAMESPACE:-$$KFP_NAMESPACE} && \
-	\
-	[ -n "$$OTEL_SERVICE_NAME" ] || { echo "Error: OTEL_SERVICE_NAME is not set in $(ENV_FILE)."; exit 1; } && \
-	[ -n "$$OTEL_NAMESPACE" ] || { echo "Error: OTEL_NAMESPACE is not set in $(ENV_FILE)."; exit 1; } && \
+	@[ -n "$(OTEL_SERVICE_NAME)" ] || { echo "Error: OTEL_SERVICE_NAME is not set."; exit 1; } && \
+	[ -n "$(OTEL_NAMESPACE)" ] || { echo "Error: OTEL_NAMESPACE or KFP_NAMESPACE is not set."; exit 1; } && \
 	\
 	echo "==> Checking for OpenTelemetry and Tempo CRDs..." && \
 	if ! oc get crd opentelemetrycollectors.opentelemetry.io >/dev/null 2>&1 || \
@@ -774,71 +763,67 @@ deploy-otel:
 		exit 0; \
 	fi && \
 	\
-	if oc get tempostack $$OTEL_SERVICE_NAME -n $$OTEL_NAMESPACE >/dev/null 2>&1; then \
+	if oc get tempostack $(OTEL_SERVICE_NAME) -n $(OTEL_NAMESPACE) >/dev/null 2>&1; then \
 		echo "==> OTel infrastructure already deployed, skipping."; \
 		exit 0; \
 	fi && \
 	\
-	if [ "$$OTEL_NAMESPACE" != "$$KFP_NAMESPACE" ]; then \
-		echo "==> Creating OTel namespace $$OTEL_NAMESPACE..."; \
-		oc create namespace $$OTEL_NAMESPACE --dry-run=client -o yaml | oc apply -f -; \
+	if [ "$(OTEL_NAMESPACE)" != "$(KFP_NAMESPACE)" ]; then \
+		echo "==> Creating OTel namespace $(OTEL_NAMESPACE)..."; \
+		oc create namespace $(OTEL_NAMESPACE) --dry-run=client -o yaml | oc apply -f -; \
 	fi && \
 	\
 	echo "==> Deploying TempoStack and OpenTelemetry Collector..." && \
 	helm upgrade agent-mesh-for-sw resources/helm \
-		--namespace "$$KFP_NAMESPACE" \
+		--namespace "$(KFP_NAMESPACE)" \
 		--reset-then-reuse-values \
 		--no-hooks \
-		--set namespace="$$KFP_NAMESPACE" \
-		--set otel.namespace=$$OTEL_NAMESPACE \
+		--set namespace="$(KFP_NAMESPACE)" \
+		--set otel.namespace=$(OTEL_NAMESPACE) \
 		--set otel.enabled=true \
-		--set otel.name=$$OTEL_SERVICE_NAME
+		--set otel.name=$(OTEL_SERVICE_NAME)
 
 # ============================================================================
 # Console application
 # ============================================================================
 
 apply-console-src:
-	@set -a && . $(ENV_FILE) && set +a && \
-	echo "==> Publishing job scripts ConfigMap..." && \
+	@echo "==> Publishing job scripts ConfigMap..." && \
 	helm upgrade agent-mesh-for-sw resources/helm \
-		--namespace "$$KFP_NAMESPACE" \
+		--namespace "$(KFP_NAMESPACE)" \
 		--reset-then-reuse-values \
 		--no-hooks \
-		--set namespace="$$KFP_NAMESPACE" \
+		--set namespace="$(KFP_NAMESPACE)" \
 		--set console.jobScripts.enabled=true \
 		--set-file console.jobScripts.runPipelines=workflows/examples/code_understanding/scripts/run_pipelines.sh \
 		--set-file console.jobScripts.mlflowAssetLoader=workflows/examples/code_understanding/loaders/mlflow_asset_loader.py \
 		--set-file console.jobScripts.defaultAssetLoader=workflows/examples/code_understanding/loaders/default_asset_loader.py
 
 run-console-app:
-	@set -a && . $(ENV_FILE) && set +a && \
-	AGENTMESH_REPO_URL="$(GIT_REPO_URL)" AGENTMESH_REPO_REF="$(GIT_REPO_BRANCH)" \
-	KFP_NAMESPACE="$$KFP_NAMESPACE" \
+	@AGENTMESH_REPO_URL="$(GIT_REPO_URL)" AGENTMESH_REPO_REF="$(GIT_REPO_BRANCH)" \
+	KFP_NAMESPACE="$(KFP_NAMESPACE)" \
 	uv run --project ui --frozen uvicorn --app-dir ui main:app --host 127.0.0.1 --port 8080
 
 deploy-console-app:
-	@set -a && . $(ENV_FILE) && set +a && \
-	: "$${KFP_IMAGE_REGISTRY:?KFP_IMAGE_REGISTRY must be set in $(ENV_FILE)}" && \
-	: "$${CONSOLE_IMAGE_TAG:?CONSOLE_IMAGE_TAG must be set in $(ENV_FILE)}" && \
-	CONSOLE_APP_IMAGE="$$KFP_IMAGE_REGISTRY/$$CONSOLE_APP_IMAGE_NAME:$$CONSOLE_IMAGE_TAG" && \
+	@[ -n "$(KFP_IMAGE_REGISTRY)" ] || { echo "KFP_IMAGE_REGISTRY must be set" >&2; exit 1; }; \
+	[ -n "$(CONSOLE_IMAGE_TAG)" ] || { echo "CONSOLE_IMAGE_TAG must be set" >&2; exit 1; }; \
 	echo "==> Deploying Code Understanding console..." && \
 	helm upgrade agent-mesh-for-sw resources/helm \
-		--namespace "$$KFP_NAMESPACE" \
+		--namespace "$(KFP_NAMESPACE)" \
 		--reset-then-reuse-values \
 		--no-hooks \
-		--set namespace="$$KFP_NAMESPACE" \
+		--set namespace="$(KFP_NAMESPACE)" \
 		--set requester="$$(oc whoami)" \
 		--set repoUrl="$(GIT_REPO_URL)" \
 		--set repoRef="$(GIT_REPO_BRANCH)" \
 		--set console.enabled=true \
-		--set-string console.image="$$CONSOLE_APP_IMAGE" \
+		--set-string console.image="$(KFP_IMAGE_REGISTRY)/$(CONSOLE_APP_IMAGE_NAME):$(CONSOLE_IMAGE_TAG)" \
 		--set console.jobScripts.enabled=true \
 		--set-file console.jobScripts.runPipelines=workflows/examples/code_understanding/scripts/run_pipelines.sh \
 		--set-file console.jobScripts.mlflowAssetLoader=workflows/examples/code_understanding/loaders/mlflow_asset_loader.py \
 		--set-file console.jobScripts.defaultAssetLoader=workflows/examples/code_understanding/loaders/default_asset_loader.py && \
-	oc rollout status deployment/code-understanding-console -n $$KFP_NAMESPACE --timeout=300s && \
-	ROUTE_HOST="$$(oc get route code-understanding-console -n $$KFP_NAMESPACE -o jsonpath='{.spec.host}')" && \
+	oc rollout status deployment/code-understanding-console -n $(KFP_NAMESPACE) --timeout=300s && \
+	ROUTE_HOST="$$(oc get route code-understanding-console -n $(KFP_NAMESPACE) -o jsonpath='{.spec.host}')" && \
 	echo "" && \
 	echo "==> Open the console in your browser:" && \
 	echo "    https://$$ROUTE_HOST" && \
@@ -848,65 +833,59 @@ deploy-console-app:
 	echo ""
 
 port-forward-console-app:
-	@set -a && . $(ENV_FILE) && set +a && \
-	echo "==> Forwarding http://localhost:8080 -> code-understanding-console:8080" && \
-	oc port-forward svc/code-understanding-console 8080:8080 -n $$KFP_NAMESPACE
+	@echo "==> Forwarding http://localhost:8080 -> code-understanding-console:8080" && \
+	oc port-forward svc/code-understanding-console 8080:8080 -n $(KFP_NAMESPACE)
 
 # ============================================================================
 # OpenShift console plugin
 # ============================================================================
 
 apply-plugin-src:
-	@set -a && . $(ENV_FILE) && set +a && \
-	echo "==> Publishing plugin job scripts ConfigMap..." && \
+	@echo "==> Publishing plugin job scripts ConfigMap..." && \
 	oc create configmap code-understanding-job-scripts \
 		--from-file=run_pipelines.sh=workflows/examples/code_understanding/scripts/run_pipelines.sh \
 		--from-file=mlflow_asset_loader.py=workflows/examples/code_understanding/loaders/mlflow_asset_loader.py \
 		--from-file=default_asset_loader.py=workflows/examples/code_understanding/loaders/default_asset_loader.py \
-		-n $$KFP_NAMESPACE --dry-run=client -o yaml | oc apply -f -
+		-n $(KFP_NAMESPACE) --dry-run=client -o yaml | oc apply -f -
 
 deploy-console-plugin: apply-plugin-src
-	@set -a && . $(ENV_FILE) && set +a && \
-	: "$${KFP_IMAGE_REGISTRY:?KFP_IMAGE_REGISTRY must be set in $(ENV_FILE)}" && \
-	: "$${CONSOLE_IMAGE_TAG:?CONSOLE_IMAGE_TAG must be set in $(ENV_FILE)}" && \
-	CONSOLE_APP_IMAGE="$$KFP_IMAGE_REGISTRY/$$CONSOLE_APP_IMAGE_NAME:$$CONSOLE_IMAGE_TAG" && \
-	CONSOLE_PLUGIN_IMAGE="$$KFP_IMAGE_REGISTRY/$$CONSOLE_PLUGIN_IMAGE_NAME:$$CONSOLE_IMAGE_TAG" && \
+	@[ -n "$(KFP_IMAGE_REGISTRY)" ] || { echo "KFP_IMAGE_REGISTRY must be set" >&2; exit 1; }; \
+	[ -n "$(CONSOLE_IMAGE_TAG)" ] || { echo "CONSOLE_IMAGE_TAG must be set" >&2; exit 1; }; \
 	CONSOLE_HOST="$$(oc get route console -n openshift-console -o jsonpath='{.spec.host}')" && \
 	CLUSTER_DOMAIN="$$(oc get ingress.config cluster -o jsonpath='{.spec.domain}')" && \
 	echo "==> Deploying OpenShift console plugin and FastAPI backend..." && \
 	helm template agent-mesh-for-sw resources/helm \
-		--set namespace="$$KFP_NAMESPACE" \
+		--set namespace="$(KFP_NAMESPACE)" \
 		--set repoUrl="$(GIT_REPO_URL)" \
 		--set repoRef="$(GIT_REPO_BRANCH)" \
 		--set clusterDomain="$$CLUSTER_DOMAIN" \
 		--set consolePlugin.enabled=true \
-		--set-string consolePlugin.image="$$CONSOLE_PLUGIN_IMAGE" \
-		--set-string consolePlugin.apiImage="$$CONSOLE_APP_IMAGE" \
+		--set-string consolePlugin.image="$(KFP_IMAGE_REGISTRY)/$(CONSOLE_PLUGIN_IMAGE_NAME):$(CONSOLE_IMAGE_TAG)" \
+		--set-string consolePlugin.apiImage="$(KFP_IMAGE_REGISTRY)/$(CONSOLE_APP_IMAGE_NAME):$(CONSOLE_IMAGE_TAG)" \
 		--set consolePlugin.consoleBaseUrl="https://$$CONSOLE_HOST" \
 		-s templates/console-plugin.yaml | oc apply -f - && \
 	echo "==> Waiting for plugin-api Route hostname to be assigned..." && \
-	until [ -n "$$(oc get route code-understanding-plugin-api -n $$KFP_NAMESPACE -o jsonpath='{.spec.host}' 2>/dev/null)" ]; do sleep 3; done && \
-	API_HOST="$$(oc get route code-understanding-plugin-api -n $$KFP_NAMESPACE -o jsonpath='{.spec.host}')" && \
+	until [ -n "$$(oc get route code-understanding-plugin-api -n $(KFP_NAMESPACE) -o jsonpath='{.spec.host}' 2>/dev/null)" ]; do sleep 3; done && \
+	API_HOST="$$(oc get route code-understanding-plugin-api -n $(KFP_NAMESPACE) -o jsonpath='{.spec.host}')" && \
 	helm template agent-mesh-for-sw resources/helm \
-		--set namespace="$$KFP_NAMESPACE" \
+		--set namespace="$(KFP_NAMESPACE)" \
 		--set repoUrl="$(GIT_REPO_URL)" \
 		--set repoRef="$(GIT_REPO_BRANCH)" \
 		--set clusterDomain="$$CLUSTER_DOMAIN" \
 		--set consolePlugin.enabled=true \
-		--set-string consolePlugin.image="$$CONSOLE_PLUGIN_IMAGE" \
-		--set-string consolePlugin.apiImage="$$CONSOLE_APP_IMAGE" \
+		--set-string consolePlugin.image="$(KFP_IMAGE_REGISTRY)/$(CONSOLE_PLUGIN_IMAGE_NAME):$(CONSOLE_IMAGE_TAG)" \
+		--set-string consolePlugin.apiImage="$(KFP_IMAGE_REGISTRY)/$(CONSOLE_APP_IMAGE_NAME):$(CONSOLE_IMAGE_TAG)" \
 		--set consolePlugin.consoleBaseUrl="https://$$CONSOLE_HOST" \
 		--set consolePlugin.apiRouteHost="$$API_HOST" \
 		-s templates/console-plugin.yaml | oc apply -f - && \
-	oc rollout restart deployment/code-understanding-console-plugin -n $$KFP_NAMESPACE && \
-	oc rollout restart deployment/code-understanding-plugin-api -n $$KFP_NAMESPACE && \
-	oc rollout status deployment/code-understanding-console-plugin -n $$KFP_NAMESPACE --timeout=300s && \
-	oc rollout status deployment/code-understanding-plugin-api -n $$KFP_NAMESPACE --timeout=300s && \
+	oc rollout restart deployment/code-understanding-console-plugin -n $(KFP_NAMESPACE) && \
+	oc rollout restart deployment/code-understanding-plugin-api -n $(KFP_NAMESPACE) && \
+	oc rollout status deployment/code-understanding-console-plugin -n $(KFP_NAMESPACE) --timeout=300s && \
+	oc rollout status deployment/code-understanding-plugin-api -n $(KFP_NAMESPACE) --timeout=300s && \
 	$(MAKE) enable-console-plugin
 
 enable-console-plugin:
-	@set -a && . $(ENV_FILE) && set +a && \
-	echo "==> Enabling code-understanding-console in OpenShift console..." && \
+	@echo "==> Enabling code-understanding-console in OpenShift console..." && \
 	EXISTING="$$(oc get consoles.operator.openshift.io cluster -o jsonpath='{.spec.plugins}' 2>/dev/null)" && \
 	if echo "$$EXISTING" | grep -q 'code-understanding-console'; then \
 	  echo "Plugin already enabled."; \
