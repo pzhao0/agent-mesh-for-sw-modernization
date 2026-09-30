@@ -120,6 +120,29 @@ PIPELINE_TOOLS_IMAGE = $(BUILD_REGISTRY)/$(KFP_PIPELINE_TOOLS_IMAGE_NAME):$(or $
 CONSOLE_APP_IMAGE    = $(BUILD_REGISTRY)/$(CONSOLE_APP_IMAGE_NAME):$(or $(VERSION),$(CONSOLE_IMAGE_TAG))
 CONSOLE_PLUGIN_IMAGE = $(BUILD_REGISTRY)/$(CONSOLE_PLUGIN_IMAGE_NAME):$(or $(VERSION),$(CONSOLE_IMAGE_TAG))
 
+HELM_REPO_ARGS = \
+	--set "repoUrl=$(GIT_REPO_URL)" \
+	--set "repoRef=$(GIT_REPO_BRANCH)"
+HELM_WORKFLOW_IMAGE_ARGS = \
+	--set "dataGeneration.image.registry=$(KFP_IMAGE_REGISTRY)" \
+	--set "dataGeneration.image.name=$(KFP_DATA_GENERATION_BASE_IMAGE_NAME)" \
+	--set "dataGeneration.image.tag=$(KFP_DATA_GENERATION_BASE_IMAGE_TAG)" \
+	--set "graphrag.image.registry=$(KFP_IMAGE_REGISTRY)" \
+	--set "graphrag.image.name=$(KFP_INDEXING_BASE_IMAGE_NAME)" \
+	--set "graphrag.image.tag=$(KFP_INDEXING_BASE_IMAGE_TAG)" \
+	--set "analysis.image.registry=$(KFP_IMAGE_REGISTRY)" \
+	--set "analysis.image.name=$(KFP_ANALYSIS_BASE_IMAGE_NAME)" \
+	--set "analysis.image.tag=$(KFP_ANALYSIS_BASE_IMAGE_TAG)"
+HELM_PIPELINE_TOOLS_ARGS = \
+	--set "pipelineTools.image.registry=$(KFP_IMAGE_REGISTRY)" \
+	--set "pipelineTools.image.name=$(KFP_PIPELINE_TOOLS_IMAGE_NAME)" \
+	--set "pipelineTools.image.tag=$(KFP_PIPELINE_TOOLS_IMAGE_TAG)"
+HELM_UPGRADE_ARGS = agent-mesh-for-sw resources/helm \
+	--namespace "$(KFP_NAMESPACE)" \
+	--reset-then-reuse-values \
+	--no-hooks \
+	--set "namespace=$(KFP_NAMESPACE)"
+
 # ============================================================================
 # Help
 # ============================================================================
@@ -277,15 +300,10 @@ install:
 	@set -e; \
 	[ -n "$(KFP_IMAGE_REGISTRY)" ] || { echo "KFP_IMAGE_REGISTRY must be set" >&2; exit 1; }; \
 	OTEL_ENABLED=false; \
-	set -- agent-mesh-for-sw resources/helm \
-		--namespace "$(KFP_NAMESPACE)" \
+	set -- $(HELM_UPGRADE_ARGS) \
 		--create-namespace \
-		--no-hooks \
-		--reset-then-reuse-values \
-		--set "namespace=$(KFP_NAMESPACE)" \
 		--set "requester=$$(oc whoami)" \
-		--set "repoUrl=$(GIT_REPO_URL)" \
-		--set "repoRef=$(GIT_REPO_BRANCH)" \
+		$(HELM_REPO_ARGS) \
 		--set-string "s4.s3.accessKeyId=$(AWS_ACCESS_KEY_ID)" \
 		--set-string "s4.s3.secretAccessKey=$(AWS_SECRET_ACCESS_KEY)" \
 		--set-string "applicationStorage.bucket=$(AWS_S3_BUCKET)" \
@@ -293,18 +311,8 @@ install:
 		--set-string "s4.auth.username=$(S4_UI_USERNAME)" \
 		--set-string "s4.auth.password=$(S4_UI_PASSWORD)" \
 		--set s4.route.enabled=true \
-		--set "dataGeneration.image.registry=$(KFP_IMAGE_REGISTRY)" \
-		--set "dataGeneration.image.name=$(KFP_DATA_GENERATION_BASE_IMAGE_NAME)" \
-		--set "dataGeneration.image.tag=$(KFP_DATA_GENERATION_BASE_IMAGE_TAG)" \
-		--set "graphrag.image.registry=$(KFP_IMAGE_REGISTRY)" \
-		--set "graphrag.image.name=$(KFP_INDEXING_BASE_IMAGE_NAME)" \
-		--set "graphrag.image.tag=$(KFP_INDEXING_BASE_IMAGE_TAG)" \
-		--set "analysis.image.registry=$(KFP_IMAGE_REGISTRY)" \
-		--set "analysis.image.name=$(KFP_ANALYSIS_BASE_IMAGE_NAME)" \
-		--set "analysis.image.tag=$(KFP_ANALYSIS_BASE_IMAGE_TAG)" \
-		--set "pipelineTools.image.registry=$(KFP_IMAGE_REGISTRY)" \
-		--set "pipelineTools.image.name=$(KFP_PIPELINE_TOOLS_IMAGE_NAME)" \
-		--set "pipelineTools.image.tag=$(KFP_PIPELINE_TOOLS_IMAGE_TAG)" \
+		$(HELM_WORKFLOW_IMAGE_ARGS) \
+		$(HELM_PIPELINE_TOOLS_ARGS) \
 		--set "clusterDomain=$(CLUSTER_DOMAIN)" \
 		--set "mlflowGatewayHost=$(GATEWAY_HOST)" \
 		--set "imageStreams.namespace=$(WORKBENCH_IMAGESTREAM_NAMESPACE)" \
@@ -408,15 +416,7 @@ prepare-workbench-images:
 			--set "namespace=$(KFP_NAMESPACE)" \
 			--set imageStreams.enabled=true \
 			--set "imageStreams.namespace=$(WORKBENCH_IMAGESTREAM_NAMESPACE)" \
-			--set "dataGeneration.image.registry=$(KFP_IMAGE_REGISTRY)" \
-			--set "dataGeneration.image.name=$(KFP_DATA_GENERATION_BASE_IMAGE_NAME)" \
-			--set "dataGeneration.image.tag=$(KFP_DATA_GENERATION_BASE_IMAGE_TAG)" \
-			--set "graphrag.image.registry=$(KFP_IMAGE_REGISTRY)" \
-			--set "graphrag.image.name=$(KFP_INDEXING_BASE_IMAGE_NAME)" \
-			--set "graphrag.image.tag=$(KFP_INDEXING_BASE_IMAGE_TAG)" \
-			--set "analysis.image.registry=$(KFP_IMAGE_REGISTRY)" \
-			--set "analysis.image.name=$(KFP_ANALYSIS_BASE_IMAGE_NAME)" \
-			--set "analysis.image.tag=$(KFP_ANALYSIS_BASE_IMAGE_TAG)" \
+			$(HELM_WORKFLOW_IMAGE_ARGS) \
 			-s templates/workbench-imagestreams.yaml | \
 			oc apply -f - -o name)"; \
 		echo "==> Waiting for project workbench images to import..."; \
@@ -431,23 +431,10 @@ deploy-notebooks: prepare-workbench-images
 			-o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null | grep -q "True"; do sleep 5; done && \
 		\
 		echo "==> Deploying notebooks..." && \
-		helm upgrade agent-mesh-for-sw resources/helm \
-			--namespace "$(KFP_NAMESPACE)" \
-			--reset-then-reuse-values \
-			--no-hooks \
-			--set namespace="$(KFP_NAMESPACE)" \
+		helm upgrade $(HELM_UPGRADE_ARGS) \
 			--set requester="$$(oc whoami)" \
-			--set repoUrl="$(GIT_REPO_URL)" \
-			--set repoRef="$(GIT_REPO_BRANCH)" \
-			--set dataGeneration.image.registry="$(KFP_IMAGE_REGISTRY)" \
-			--set dataGeneration.image.name="$(KFP_DATA_GENERATION_BASE_IMAGE_NAME)" \
-			--set dataGeneration.image.tag="$(KFP_DATA_GENERATION_BASE_IMAGE_TAG)" \
-			--set graphrag.image.registry="$(KFP_IMAGE_REGISTRY)" \
-			--set graphrag.image.name="$(KFP_INDEXING_BASE_IMAGE_NAME)" \
-			--set graphrag.image.tag="$(KFP_INDEXING_BASE_IMAGE_TAG)" \
-			--set analysis.image.registry="$(KFP_IMAGE_REGISTRY)" \
-			--set analysis.image.name="$(KFP_ANALYSIS_BASE_IMAGE_NAME)" \
-			--set analysis.image.tag="$(KFP_ANALYSIS_BASE_IMAGE_TAG)" \
+			$(HELM_REPO_ARGS) \
+			$(HELM_WORKFLOW_IMAGE_ARGS) \
 			--set imageStreams.namespace="$(WORKBENCH_IMAGESTREAM_NAMESPACE)" \
 			--set deployNotebooks=true
 
@@ -639,12 +626,9 @@ upload-pipelines:
 	oc delete job upload-kubeflow-pipelines -n $(KFP_NAMESPACE) --ignore-not-found=true && \
 	helm template agent-mesh-for-sw resources/helm \
 		--set namespace="$(KFP_NAMESPACE)" \
+		$(HELM_REPO_ARGS) \
 		--set requester="$$(oc whoami)" \
-		--set repoUrl="$(GIT_REPO_URL)" \
-		--set repoRef="$(GIT_REPO_BRANCH)" \
-		--set pipelineTools.image.registry="$(KFP_IMAGE_REGISTRY)" \
-		--set pipelineTools.image.name="$(KFP_PIPELINE_TOOLS_IMAGE_NAME)" \
-		--set pipelineTools.image.tag="$(KFP_PIPELINE_TOOLS_IMAGE_TAG)" \
+		$(HELM_PIPELINE_TOOLS_ARGS) \
 		-s templates/upload-pipelines-job.yaml | oc apply -n $(KFP_NAMESPACE) -f -
 
 upload-mlflow-assets:
@@ -654,12 +638,9 @@ upload-mlflow-assets:
 	echo "==> Submitting upload-assets job..." && \
 	helm template agent-mesh-for-sw resources/helm \
 		--set namespace="$(KFP_NAMESPACE)" \
+		$(HELM_REPO_ARGS) \
 		--set requester="$$(oc whoami)" \
-		--set repoUrl="$(GIT_REPO_URL)" \
-		--set repoRef="$(GIT_REPO_BRANCH)" \
-		--set pipelineTools.image.registry="$(KFP_IMAGE_REGISTRY)" \
-		--set pipelineTools.image.name="$(KFP_PIPELINE_TOOLS_IMAGE_NAME)" \
-		--set pipelineTools.image.tag="$(KFP_PIPELINE_TOOLS_IMAGE_TAG)" \
+		$(HELM_PIPELINE_TOOLS_ARGS) \
 		--set mlflowGatewayHost="$(GATEWAY_HOST)" \
 		-s templates/upload-assets-job.yaml | oc apply -n $(KFP_NAMESPACE) -f -
 
@@ -670,12 +651,9 @@ upload-prebuilt-index:
 	echo "==> Submitting prebuilt-index upload job..." && \
 	helm template agent-mesh-for-sw resources/helm \
 		--set namespace="$(KFP_NAMESPACE)" \
+		$(HELM_REPO_ARGS) \
 		--set requester="$$(oc whoami)" \
-		--set repoUrl="$(GIT_REPO_URL)" \
-		--set repoRef="$(GIT_REPO_BRANCH)" \
-		--set pipelineTools.image.registry="$(KFP_IMAGE_REGISTRY)" \
-		--set pipelineTools.image.name="$(KFP_PIPELINE_TOOLS_IMAGE_NAME)" \
-		--set pipelineTools.image.tag="$(KFP_PIPELINE_TOOLS_IMAGE_TAG)" \
+		$(HELM_PIPELINE_TOOLS_ARGS) \
 		--set mlflowGatewayHost="$(GATEWAY_HOST)" \
 		--set prebuiltIndex.enabled=true \
 		-s templates/upload-prebuilt-index-job.yaml | oc apply -n $(KFP_NAMESPACE) -f - && \
@@ -703,8 +681,7 @@ run-adhoc-query:
 	echo "==> Submitting adhoc query job..." && \
 	helm template agent-mesh-for-sw resources/helm \
 		--set namespace="$(KFP_NAMESPACE)" \
-		--set repoUrl="$(GIT_REPO_URL)" \
-		--set repoRef="$(GIT_REPO_BRANCH)" \
+		$(HELM_REPO_ARGS) \
 		--set adhocQuery.run=true \
 		--set-string adhocQuery.jobId="$$JOB_ID" \
 		--set-string adhocQuery.useGlobal="$$USE_GLOBAL" \
@@ -731,15 +708,12 @@ run-pipelines:
 	oc delete job run-pipelines -n $(KFP_NAMESPACE) --ignore-not-found=true && \
 	helm template agent-mesh-for-sw resources/helm \
 		--set namespace="$(KFP_NAMESPACE)" \
-		--set repoUrl="$(GIT_REPO_URL)" \
-		--set repoRef="$(GIT_REPO_BRANCH)" \
+		$(HELM_REPO_ARGS) \
 		--set runPipelines.run=true \
 		--set-string runPipelines.args="$${ARGS:---single-repo}" \
 		--set-string runPipelines.targetPath="$(KFP_DATA_GENERATION_OUTPUT_PATH)" \
 		--set-string runPipelines.graphragSourcePath="$(KFP_DATA_INDEXING_OUTPUT_PATH)" \
-		--set pipelineTools.image.registry="$(KFP_IMAGE_REGISTRY)" \
-		--set pipelineTools.image.name="$(KFP_PIPELINE_TOOLS_IMAGE_NAME)" \
-		--set pipelineTools.image.tag="$(KFP_PIPELINE_TOOLS_IMAGE_TAG)" \
+		$(HELM_PIPELINE_TOOLS_ARGS) \
 		-s templates/run-pipelines-job.yaml | oc apply -n $(KFP_NAMESPACE) -f - && \
 	\
 	echo "==> Waiting for run-pipelines container to start..." && \
@@ -774,11 +748,7 @@ deploy-otel:
 	fi && \
 	\
 	echo "==> Deploying TempoStack and OpenTelemetry Collector..." && \
-	helm upgrade agent-mesh-for-sw resources/helm \
-		--namespace "$(KFP_NAMESPACE)" \
-		--reset-then-reuse-values \
-		--no-hooks \
-		--set namespace="$(KFP_NAMESPACE)" \
+	helm upgrade $(HELM_UPGRADE_ARGS) \
 		--set otel.namespace=$(OTEL_NAMESPACE) \
 		--set otel.enabled=true \
 		--set otel.name=$(OTEL_SERVICE_NAME)
@@ -789,11 +759,7 @@ deploy-otel:
 
 apply-console-src:
 	@echo "==> Publishing job scripts ConfigMap..." && \
-	helm upgrade agent-mesh-for-sw resources/helm \
-		--namespace "$(KFP_NAMESPACE)" \
-		--reset-then-reuse-values \
-		--no-hooks \
-		--set namespace="$(KFP_NAMESPACE)" \
+	helm upgrade $(HELM_UPGRADE_ARGS) \
 		--set console.jobScripts.enabled=true \
 		--set-file console.jobScripts.runPipelines=workflows/examples/code_understanding/scripts/run_pipelines.sh \
 		--set-file console.jobScripts.mlflowAssetLoader=workflows/examples/code_understanding/loaders/mlflow_asset_loader.py \
@@ -808,14 +774,9 @@ deploy-console-app:
 	@[ -n "$(KFP_IMAGE_REGISTRY)" ] || { echo "KFP_IMAGE_REGISTRY must be set" >&2; exit 1; }; \
 	[ -n "$(CONSOLE_IMAGE_TAG)" ] || { echo "CONSOLE_IMAGE_TAG must be set" >&2; exit 1; }; \
 	echo "==> Deploying Code Understanding console..." && \
-	helm upgrade agent-mesh-for-sw resources/helm \
-		--namespace "$(KFP_NAMESPACE)" \
-		--reset-then-reuse-values \
-		--no-hooks \
-		--set namespace="$(KFP_NAMESPACE)" \
+	helm upgrade $(HELM_UPGRADE_ARGS) \
 		--set requester="$$(oc whoami)" \
-		--set repoUrl="$(GIT_REPO_URL)" \
-		--set repoRef="$(GIT_REPO_BRANCH)" \
+		$(HELM_REPO_ARGS) \
 		--set console.enabled=true \
 		--set-string console.image="$(KFP_IMAGE_REGISTRY)/$(CONSOLE_APP_IMAGE_NAME):$(CONSOLE_IMAGE_TAG)" \
 		--set console.jobScripts.enabled=true \
@@ -856,8 +817,7 @@ deploy-console-plugin: apply-plugin-src
 	echo "==> Deploying OpenShift console plugin and FastAPI backend..." && \
 	helm template agent-mesh-for-sw resources/helm \
 		--set namespace="$(KFP_NAMESPACE)" \
-		--set repoUrl="$(GIT_REPO_URL)" \
-		--set repoRef="$(GIT_REPO_BRANCH)" \
+		$(HELM_REPO_ARGS) \
 		--set clusterDomain="$$CLUSTER_DOMAIN" \
 		--set consolePlugin.enabled=true \
 		--set-string consolePlugin.image="$(KFP_IMAGE_REGISTRY)/$(CONSOLE_PLUGIN_IMAGE_NAME):$(CONSOLE_IMAGE_TAG)" \
@@ -869,8 +829,7 @@ deploy-console-plugin: apply-plugin-src
 	API_HOST="$$(oc get route code-understanding-plugin-api -n $(KFP_NAMESPACE) -o jsonpath='{.spec.host}')" && \
 	helm template agent-mesh-for-sw resources/helm \
 		--set namespace="$(KFP_NAMESPACE)" \
-		--set repoUrl="$(GIT_REPO_URL)" \
-		--set repoRef="$(GIT_REPO_BRANCH)" \
+		$(HELM_REPO_ARGS) \
 		--set clusterDomain="$$CLUSTER_DOMAIN" \
 		--set consolePlugin.enabled=true \
 		--set-string consolePlugin.image="$(KFP_IMAGE_REGISTRY)/$(CONSOLE_PLUGIN_IMAGE_NAME):$(CONSOLE_IMAGE_TAG)" \
