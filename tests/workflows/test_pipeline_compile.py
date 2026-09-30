@@ -14,6 +14,20 @@ EXPECTED_PIPELINES = {
 }
 
 
+def collect_task_names(value):
+    task_names = set()
+    if isinstance(value, dict):
+        tasks = value.get("tasks")
+        if isinstance(tasks, dict):
+            task_names.update(tasks)
+        for child in value.values():
+            task_names.update(collect_task_names(child))
+    elif isinstance(value, list):
+        for child in value:
+            task_names.update(collect_task_names(child))
+    return task_names
+
+
 def test_all_pipelines_compile(tmp_path):
     env = os.environ | {
         "PYTHONPATH": str(WORKFLOW_ROOT),
@@ -68,6 +82,7 @@ def test_all_pipelines_compile(tmp_path):
 
     multi_repo = yaml.safe_load((tmp_path / "multi_repo.yaml").read_text())
     multi_tasks = multi_repo["root"]["dag"]["tasks"]
+    assert "get-repo-list-op" in collect_task_names(multi_repo)
     assert multi_tasks["graphrag-indexing-multi-repo-pipeline"]["dependentTasks"] == [
         "data-generation-multi-repo-pipeline"
     ]
