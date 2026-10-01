@@ -114,7 +114,7 @@ The architecture illustrates the path from raw source code through automated dat
 | Resource                   | Minimum or example                                                  | Used for                                          |
 | -------------------------- | ------------------------------------------------------------------- | ------------------------------------------------- |
 | CPU and memory             | 8+ vCPUs and 24+ GiB RAM                                            | Quickstart workloads, separate from model serving |
-| Persistent storage         | Default `StorageClass` able to provision a 50 GiB ReadWriteOnce PVC | Pipeline artifacts and telemetry data             |
+| Persistent storage         | Default `StorageClass` able to provision a 50 GiB ReadWriteOnce PVC | S4-backed S3-compatible object storage             |
 | NVIDIA H100 GPU            | 1, if hosting the example `gpt-oss-120b` endpoint                   | GraphRAG chat model                               |
 | NVIDIA L40S GPU            | 1, if hosting the example `e5-mistral-7b-instruct` endpoint         | Embedding model                                   |
 | NVIDIA H200 GPU (optional) | 1, if hosting the example `gemma-4-31B-it` endpoint                 | Coding agent integration                          |
@@ -388,9 +388,10 @@ images, and the optional cluster-wide OpenShift console plugin also remain.
 3. **Data analysis** queries the index and writes a Markdown migration report.
   Ad hoc queries use that index for further investigation.
 
-The workflow can use MLflow to store indexes and results and S4 for
-S3-compatible storage. A multi-repository run produces a combined index and
-report. OpenTelemetry and Tempo can add tracing when enabled.
+The workflow can use MLflow to store indexes and results and the shared
+`aws-compatible-storage` chart (S4-backed) for S3-compatible storage. A
+multi-repository run produces a combined index and report. OpenTelemetry and
+Tempo can add tracing when enabled.
 
 ### Configuration variables
 
@@ -402,7 +403,6 @@ values.
 | Variables                                                                                                                              | Purpose                                                          |
 | -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_S3_BUCKET`                                                                          | S4 credentials and application data bucket                       |
-| `S4_UI_USERNAME`, `S4_UI_PASSWORD`                                                                                                     | Credentials for the S4 web interface                             |
 | `GIT_USERNAME`, `GIT_TOKEN`                                                                                                            | Credentials for private Git repositories                         |
 | `GIT_REPO`, `GIT_BRANCH`, `GIT_REPO_LIST`                                                                                              | Single-repository source and multi-repository JSON list          |
 | `GRAPHRAG_LLM_TOKEN`, `GRAPHRAG_LLM_ID`, `GRAPHRAG_LLM_API_BASE`, `GRAPHRAG_LLM_PROVIDER`, `GRAPHRAG_LLM_PROVIDER_SETTINGS_XML`        | Chat model credentials, endpoint, and GraphRAG provider settings |
