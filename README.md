@@ -51,6 +51,7 @@ Understanding** and **Code Migration**. This repository demonstrates the **Code 
 - OpenShift CLI (`oc`)
 - Helm CLI (`helm`)
 - Make (`make`)
+- jq (`jq`, for `make verify-deploy`)
 - uv CLI (`uv`)
 - (**Optional**) Red Hat build of OpenTelemetry operator [Installation](https://docs.redhat.com/en/documentation/openshift_container_platform/4.18/html/distributed_tracing/distributed-tracing-otel-install)
 - (**Optional**) Tempo Operator [Installation](https://docs.redhat.com/en/documentation/openshift_container_platform/4.18/html/distributed_tracing/distributed-tracing-tempo-install)
@@ -82,8 +83,8 @@ Ensure that you have access to OpenAI-compatible endpoints for the following mod
 
    At minimum, configure the following installation and model values:
 
-   - aws-compatible-storage (S4) and project: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
-     `S4_UI_USERNAME`, `S4_UI_PASSWORD`, and `KFP_NAMESPACE`.
+   - aws-compatible-storage (S4-backed) and project: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+     `KFP_NAMESPACE`, and optionally `AWS_S3_BUCKET`.
    - GraphRAG chat model: `GRAPHRAG_LLM_TOKEN`, `GRAPHRAG_LLM_ID`,
      `GRAPHRAG_LLM_API_BASE`, `GRAPHRAG_LLM_PROVIDER`, and
      `GRAPHRAG_LLM_PROVIDER_SETTINGS_XML`.

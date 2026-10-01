@@ -76,7 +76,6 @@ OTEL_SEMCONV_STABILITY_OPT_IN       ?= genai
 
 SECRET_ENV_VARS := \
 	AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_S3_BUCKET \
-	S4_UI_USERNAME S4_UI_PASSWORD \
 	GIT_USERNAME GIT_TOKEN GIT_REPO GIT_BRANCH GIT_REPO_LIST \
 	GRAPHRAG_LLM_TOKEN GRAPHRAG_LLM_ID GRAPHRAG_LLM_API_BASE \
 	GRAPHRAG_LLM_PROVIDER GRAPHRAG_LLM_PROVIDER_SETTINGS_XML \
@@ -285,8 +284,6 @@ install: helm-dependencies
 	[ -n "$(AWS_ACCESS_KEY_ID)" ] || { echo "AWS_ACCESS_KEY_ID must be set" >&2; exit 1; }; \
 	[ -n "$(AWS_SECRET_ACCESS_KEY)" ] || { echo "AWS_SECRET_ACCESS_KEY must be set" >&2; exit 1; }; \
 	[ -n "$(AWS_S3_BUCKET)" ] || { echo "AWS_S3_BUCKET must be set" >&2; exit 1; }; \
-	[ -n "$(S4_UI_USERNAME)" ] || { echo "S4_UI_USERNAME must be set" >&2; exit 1; }; \
-	[ -n "$(S4_UI_PASSWORD)" ] || { echo "S4_UI_PASSWORD must be set" >&2; exit 1; }; \
 	\
 	echo "==> Creating namespaces..." && \
 	set -- agent-mesh-for-sw resources/helm \
@@ -317,10 +314,6 @@ install: helm-dependencies
 		--set-string "aws-compatible-storage.s3.accessKeyId=$(AWS_ACCESS_KEY_ID)" \
 		--set-string "aws-compatible-storage.s3.secretAccessKey=$(AWS_SECRET_ACCESS_KEY)" \
 		--set-string "applicationStorage.bucket=$(AWS_S3_BUCKET)" \
-		--set aws-compatible-storage.auth.enabled=true \
-		--set-string "aws-compatible-storage.auth.username=$(S4_UI_USERNAME)" \
-		--set-string "aws-compatible-storage.auth.password=$(S4_UI_PASSWORD)" \
-		--set aws-compatible-storage.route.enabled=true \
 		$(HELM_WORKFLOW_IMAGE_ARGS) \
 		$(HELM_PIPELINE_TOOLS_ARGS) \
 		--set "clusterDomain=$(CLUSTER_DOMAIN)" \
@@ -462,8 +455,6 @@ apply-secrets:
 	@[ -n "$(AWS_ACCESS_KEY_ID)" ] || { echo "AWS_ACCESS_KEY_ID must be set" >&2; exit 1; }; \
 	[ -n "$(AWS_SECRET_ACCESS_KEY)" ] || { echo "AWS_SECRET_ACCESS_KEY must be set" >&2; exit 1; }; \
 	[ -n "$(AWS_S3_BUCKET)" ] || { echo "AWS_S3_BUCKET must be set" >&2; exit 1; }; \
-	[ -n "$(S4_UI_USERNAME)" ] || { echo "S4_UI_USERNAME must be set" >&2; exit 1; }; \
-	[ -n "$(S4_UI_PASSWORD)" ] || { echo "S4_UI_PASSWORD must be set" >&2; exit 1; }; \
 	if [ "$(DEPLOY_EMBEDDING_MODEL)" = "true" ]; then \
 		: "$${EMBED_LLM_TOKEN:=dummy}"; \
 		: "$${EMBED_LLM_API_BASE:=http://e5-mistral:8000/v1}"; \
@@ -528,7 +519,7 @@ helm-template: helm-dependencies
 		--set-string "namespace=$$VERIFY_NAMESPACE"
 
 verify-secrets:
-	@if git grep -nE '(AWS_SECRET_ACCESS_KEY|S4_UI_PASSWORD|GIT_TOKEN|[A-Z0-9_]+_(API_KEY|TOKEN))=[^<[:space:]"$$]' \
+	@if git grep -nE '(AWS_SECRET_ACCESS_KEY|GIT_TOKEN|[A-Z0-9_]+_(API_KEY|TOKEN))=[^<[:space:]"$$]' \
 		-- ':!.env.template'; then \
 		echo "Error: possible plaintext secret found in a tracked file." >&2; \
 		exit 1; \
@@ -541,17 +532,21 @@ verify-deploy: verify-secrets
 	: "$${VERIFY_NAMESPACE:?Set NAMESPACE or KFP_NAMESPACE}"; \
 	echo "==> Verifying Helm release $(RELEASE) in $$VERIFY_NAMESPACE..."; \
 	helm status $(RELEASE) -n "$$VERIFY_NAMESPACE" >/dev/null; \
-	echo "==> Waiting for aws-compatible-storage (S4)..."; \
-	oc rollout status deployment/s4 -n "$$VERIFY_NAMESPACE" --timeout="$(WAIT_TIMEOUT)"; \
-	S4_SECRET_STATE=$$(oc get secret s4-credentials -n "$$VERIFY_NAMESPACE" \
+	STORAGE_VALUES=$$(helm get values $(RELEASE) -n "$$VERIFY_NAMESPACE" --all -o json); \
+	STORAGE_NAME=$$(printf '%s' "$$STORAGE_VALUES" | jq -er '."aws-compatible-storage".fullnameOverride | select(type == "string" and length > 0)'); \
+	STORAGE_SECRET=$$(printf '%s' "$$STORAGE_VALUES" | jq -r '."aws-compatible-storage".s3.existingSecret // empty'); \
+	STORAGE_SECRET=$${STORAGE_SECRET:-$$STORAGE_NAME-credentials}; \
+	STORAGE_HEALTH_PORT=$$(printf '%s' "$$STORAGE_VALUES" | jq -er '."aws-compatible-storage".service.port // 5000'); \
+	echo "==> Waiting for aws-compatible-storage ($$STORAGE_NAME)..."; \
+	oc rollout status "deployment/$$STORAGE_NAME" -n "$$VERIFY_NAMESPACE" --timeout="$(WAIT_TIMEOUT)"; \
+	STORAGE_SECRET_STATE=$$(oc get secret "$$STORAGE_SECRET" -n "$$VERIFY_NAMESPACE" \
 		-o go-template='{{if and .data.AWS_ACCESS_KEY_ID .data.AWS_SECRET_ACCESS_KEY}}configured{{else}}missing{{end}}'); \
-	[ "$$S4_SECRET_STATE" = configured ] || { echo "Error: S4 credentials are missing." >&2; exit 1; }; \
-	oc get route s4 -n "$$VERIFY_NAMESPACE" >/dev/null; \
-	VERIFY_POD="s4-health-$$(date +%s)"; \
+	[ "$$STORAGE_SECRET_STATE" = configured ] || { echo "Error: storage credentials are missing." >&2; exit 1; }; \
+	VERIFY_POD="storage-health-$$(date +%s)"; \
 	oc run "$$VERIFY_POD" -n "$$VERIFY_NAMESPACE" --rm --attach=true --restart=Never \
 		--pod-running-timeout="$(WAIT_TIMEOUT)" \
 		--image=image-registry.openshift-image-registry.svc:5000/openshift/cli:latest \
-		--command -- curl -fsS --connect-timeout 10 --max-time 60 http://s4:5000/api >/dev/null; \
+		--command -- curl -fsS --connect-timeout 10 --max-time 60 "http://$$STORAGE_NAME:$$STORAGE_HEALTH_PORT/api" >/dev/null; \
 	echo "==> Waiting for the OpenShift AI pipeline server..."; \
 	oc wait datasciencepipelinesapplication/dspa -n "$$VERIFY_NAMESPACE" \
 		--for=condition=Ready --timeout="$(WAIT_TIMEOUT)"; \

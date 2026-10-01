@@ -28,11 +28,9 @@ aws-compatible-storage:
     accessKeyId: ""
     secretAccessKey: ""
     region: us-east-1
-  # The Makefile enables authentication and supplies credentials at install time.
+  # The UI is not used by this quickstart; retain the internal /api health endpoint.
   auth:
     enabled: false
-    username: ""
-    password: ""
   route:
     enabled: false
     s3Api:

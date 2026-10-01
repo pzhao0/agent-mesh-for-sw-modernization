@@ -1,7 +1,7 @@
 {{- if .Values.otel.enabled }}
 {{- $storage := index .Values "aws-compatible-storage" }}
 ---
-# S3 credentials mirrored into the Tempo namespace for TempoStack → aws-compatible-storage (S4).
+# S3 credentials mirrored into the Tempo namespace for TempoStack → aws-compatible-storage.
 apiVersion: v1
 kind: Secret
 metadata:
