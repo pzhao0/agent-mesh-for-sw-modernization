@@ -16,7 +16,8 @@ export
 RELEASE               ?= agent-mesh-for-sw
 CHART_DIR             ?= resources/helm
 NAMESPACE             ?=
-VERIFY_TIMEOUT        ?= 10m
+WAIT_TIMEOUT          ?= 5m
+ADHOC_TIMEOUT         ?= 20m
 WORKBENCH_IMAGESTREAM_NAMESPACE ?= redhat-ods-applications
 # Fall back to origin and the local branch when no upstream is configured.
 GIT_LOCAL_BRANCH    	?= $(shell git branch --show-current 2>/dev/null)
@@ -141,6 +142,9 @@ HELM_UPGRADE_ARGS = agent-mesh-for-sw resources/helm \
 	--namespace "$(KFP_NAMESPACE)" \
 	--reset-then-reuse-values \
 	--no-hooks \
+	--wait \
+	--wait-for-jobs \
+	--timeout "$(WAIT_TIMEOUT)" \
 	--set "namespace=$(KFP_NAMESPACE)"
 
 # ============================================================================
@@ -265,6 +269,8 @@ help-all:
 	@echo "  PIPELINE_GIT_REPO_LIST      Override the repository-list file"
 	@echo "  ARGS                        Arguments passed to run-pipelines"
 	@echo "  QUESTION_FILE               Required input file for run-adhoc-query"
+	@echo "  WAIT_TIMEOUT                Resource readiness timeout (default: $(WAIT_TIMEOUT))"
+	@echo "  ADHOC_TIMEOUT               Ad-hoc query timeout (default: $(ADHOC_TIMEOUT))"
 	@echo ""
 	@echo "See .env.template for additional deployment, pipeline, and image configuration."
 
@@ -290,8 +296,10 @@ install:
 	helm template "$$@" -s templates/namespace.yaml | oc apply -f - && \
 	\
 	echo "==> Waiting for OpenShift to inject service CA into odh-trusted-ca-bundle..." && \
-	until oc get configmap odh-trusted-ca-bundle -n $(KFP_NAMESPACE) \
-		-o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null | grep -q CERTIFICATE; do sleep 5; done
+	oc wait configmap/odh-trusted-ca-bundle -n "$(KFP_NAMESPACE)" \
+		--for=create --timeout="$(WAIT_TIMEOUT)" && \
+	oc wait configmap/odh-trusted-ca-bundle -n "$(KFP_NAMESPACE)" \
+		--for=jsonpath='{.data.ca-bundle\.crt}' --timeout="$(WAIT_TIMEOUT)"
 	$(MAKE) prepare-workbench-images
 	@if [ "$(DEPLOY_EMBEDDING_MODEL)" = "true" ]; then \
 		$(MAKE) deploy-embedding-model; \
@@ -331,8 +339,10 @@ install:
 	echo "==> Installing Agent Mesh Helm release..."; \
 	helm upgrade --install "$$@"; \
 	echo "==> Waiting for pipeline server..."; \
-	until oc get deployment ds-pipeline-dspa -n $(KFP_NAMESPACE) >/dev/null 2>&1; do sleep 5; done; \
-	oc wait deployment/ds-pipeline-dspa -n $(KFP_NAMESPACE) --for=condition=Available --timeout=300s
+	oc wait deployment/ds-pipeline-dspa -n "$(KFP_NAMESPACE)" \
+		--for=create --timeout="$(WAIT_TIMEOUT)"; \
+	oc wait deployment/ds-pipeline-dspa -n "$(KFP_NAMESPACE)" \
+		--for=condition=Available --timeout="$(WAIT_TIMEOUT)"
 	@if [ "$(ASSET_LOADER)" = "mlflow" ]; then \
 		echo "==> Preloading MLflow assets..." && \
 		$(MAKE) upload-mlflow-assets; \
@@ -354,7 +364,8 @@ uninstall:
 	for resource in $$(oc get job,configmap -n "$(KFP_NAMESPACE)" -o name 2>/dev/null || true); do \
 		case "$$resource" in \
 			job.batch/upload-*|job.batch/run-pipelines|job.batch/run-adhoc-query-*|job.batch/cu-pipeline-*|job.batch/cu-query-*|configmap/adhoc-query-*|configmap/cu-repos-*) \
-				oc delete "$$resource" -n "$(KFP_NAMESPACE)" --ignore-not-found;; \
+				oc delete "$$resource" -n "$(KFP_NAMESPACE)" --ignore-not-found \
+					--wait=true --timeout="$(WAIT_TIMEOUT)";; \
 		esac; \
 	done; \
 	echo "==> Removing Agent Mesh Kubeflow pipeline runs..."; \
@@ -362,14 +373,14 @@ uninstall:
 		case "$${workflow#*/}" in \
 			single-repo-pipeline-*|multi-repo-pipeline-*) \
 				oc delete "$$workflow" -n "$(KFP_NAMESPACE)" \
-					--cascade=foreground --wait=true --timeout=2m;; \
+					--cascade=foreground --wait=true --timeout="$(WAIT_TIMEOUT)";; \
 		esac; \
 	done; \
 	echo "==> Removing Helm releases..."; \
 	helm uninstall e5-mistral -n "$(KFP_NAMESPACE)" \
-		--ignore-not-found --cascade foreground --wait --timeout 2m; \
+		--ignore-not-found --cascade foreground --wait --timeout "$(WAIT_TIMEOUT)"; \
 	helm uninstall agent-mesh-for-sw -n "$(KFP_NAMESPACE)" \
-		--ignore-not-found --cascade foreground --wait --timeout 2m; \
+		--ignore-not-found --cascade foreground --wait --timeout "$(WAIT_TIMEOUT)"; \
 	echo "==> Removing non-Helm resources..."; \
 	oc delete \
 		deployment/code-understanding-console-plugin \
@@ -379,23 +390,25 @@ uninstall:
 		route.route.openshift.io/code-understanding-plugin-api \
 		configmap/code-understanding-console-plugin-config \
 		configmap/code-understanding-job-scripts \
-		-n "$(KFP_NAMESPACE)" --ignore-not-found; \
+		-n "$(KFP_NAMESPACE)" --ignore-not-found \
+		--wait=true --timeout="$(WAIT_TIMEOUT)"; \
 	oc delete imagestream -n "$(WORKBENCH_IMAGESTREAM_NAMESPACE)" \
 		-l "app.kubernetes.io/part-of=agent-mesh-for-sw,agent-mesh.redhat.com/owner-namespace=$(KFP_NAMESPACE)" \
-		--ignore-not-found; \
+		--ignore-not-found --wait=true --timeout="$(WAIT_TIMEOUT)"; \
 	oc delete secret git-credentials code-understanding-env \
-		-n "$(KFP_NAMESPACE)" --ignore-not-found; \
+		-n "$(KFP_NAMESPACE)" --ignore-not-found \
+		--wait=true --timeout="$(WAIT_TIMEOUT)"; \
 	oc delete pvc mariadb-dspa -n "$(KFP_NAMESPACE)" \
-		--ignore-not-found --wait=true --timeout=300s; \
+		--ignore-not-found --wait=true --timeout="$(WAIT_TIMEOUT)"; \
 	if [ -n "$(OTEL_NAMESPACE)" ]; then \
 		oc delete job -n "$(OTEL_NAMESPACE)" \
 			-l "app.kubernetes.io/part-of=agent-mesh-for-sw,agent-mesh.redhat.com/owner-namespace=$(KFP_NAMESPACE)" \
-			--ignore-not-found; \
+			--ignore-not-found --wait=true --timeout="$(WAIT_TIMEOUT)"; \
 		if [ -n "$(OTEL_SERVICE_NAME)" ]; then \
 			for pvc in $$(oc get pvc -n "$(OTEL_NAMESPACE)" -o name 2>/dev/null || true); do \
 				case "$${pvc#*/}" in data-tempo-"$(OTEL_SERVICE_NAME)"-ingester-*) \
 					oc delete "$$pvc" -n "$(OTEL_NAMESPACE)" --ignore-not-found \
-						--wait=true --timeout=300s;; \
+						--wait=true --timeout="$(WAIT_TIMEOUT)";; \
 				esac; \
 			done; \
 		fi; \
@@ -406,7 +419,10 @@ deploy-embedding-model:
 	@echo "==> Deploying e5-mistral embedding model..." && \
 		helm upgrade --install e5-mistral resources/helm/e5-mistral \
 			--namespace "$(KFP_NAMESPACE)" \
-			--create-namespace
+			--create-namespace && \
+		echo "==> Waiting for e5-mistral deployment..." && \
+		oc rollout status deployment/e5-mistral -n "$(KFP_NAMESPACE)" \
+			--timeout="$(WAIT_TIMEOUT)"
 
 prepare-workbench-images:
 	@set -e; \
@@ -422,13 +438,15 @@ prepare-workbench-images:
 		echo "==> Waiting for project workbench images to import..."; \
 		oc wait -n "$(WORKBENCH_IMAGESTREAM_NAMESPACE)" \
 			--for=jsonpath='{.status.tags[0].items[0].image}' \
-			--timeout=300s $$IMAGESTREAMS
+			--timeout="$(WAIT_TIMEOUT)" $$IMAGESTREAMS
 
 deploy-notebooks: prepare-workbench-images
 	@set -e; \
 		echo "==> Waiting for DSPA to be fully reconciled..." && \
-		until oc get datasciencepipelinesapplication dspa -n $(KFP_NAMESPACE) \
-			-o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null | grep -q "True"; do sleep 5; done && \
+		oc wait datasciencepipelinesapplication/dspa -n "$(KFP_NAMESPACE)" \
+			--for=create --timeout="$(WAIT_TIMEOUT)" && \
+		oc wait datasciencepipelinesapplication/dspa -n "$(KFP_NAMESPACE)" \
+			--for=condition=Ready --timeout="$(WAIT_TIMEOUT)" && \
 		\
 		echo "==> Deploying notebooks..." && \
 		helm upgrade $(HELM_UPGRADE_ARGS) \
@@ -468,7 +486,8 @@ apply-secrets:
 			printenv "$$key" >> "$$SECRET_ENV_FILE"; \
 		fi; \
 	done && \
-	oc delete secret code-understanding-env -n $(KFP_NAMESPACE) --ignore-not-found=true && \
+	oc delete secret code-understanding-env -n $(KFP_NAMESPACE) --ignore-not-found=true \
+		--wait=true --timeout="$(WAIT_TIMEOUT)" && \
 	oc create secret generic code-understanding-env --from-env-file "$$SECRET_ENV_FILE" -n $(KFP_NAMESPACE) && \
 	\
 	REPO_LIST="$(GIT_REPO_LIST)" && \
@@ -479,7 +498,7 @@ apply-secrets:
 	if [ -n "$$REPO_LIST" ] && [ -f "$$REPO_LIST" ]; then \
 		oc set data secret/code-understanding-env -n $(KFP_NAMESPACE) \
 			--from-file=GIT_REPO_LIST_CONTENTS="$$REPO_LIST"; \
-	fi || true && \
+	fi && \
 	oc patch secret code-understanding-env -n $(KFP_NAMESPACE) \
 		--type=merge \
 		-p '{"stringData":{"MLFLOW_NAMESPACE":"$(KFP_NAMESPACE)"}}' && \
@@ -518,20 +537,21 @@ verify-deploy: verify-secrets
 	echo "==> Verifying Helm release $(RELEASE) in $$VERIFY_NAMESPACE..."; \
 	helm status $(RELEASE) -n "$$VERIFY_NAMESPACE" >/dev/null; \
 	echo "==> Waiting for S4..."; \
-	oc rollout status deployment/s4 -n "$$VERIFY_NAMESPACE" --timeout=$(VERIFY_TIMEOUT); \
+	oc rollout status deployment/s4 -n "$$VERIFY_NAMESPACE" --timeout="$(WAIT_TIMEOUT)"; \
 	S4_SECRET_STATE=$$(oc get secret s4-credentials -n "$$VERIFY_NAMESPACE" \
 		-o go-template='{{if and .data.AWS_ACCESS_KEY_ID .data.AWS_SECRET_ACCESS_KEY}}configured{{else}}missing{{end}}'); \
 	[ "$$S4_SECRET_STATE" = configured ] || { echo "Error: S4 credentials are missing." >&2; exit 1; }; \
 	oc get route s4 -n "$$VERIFY_NAMESPACE" >/dev/null; \
 	VERIFY_POD="s4-health-$$(date +%s)"; \
 	oc run "$$VERIFY_POD" -n "$$VERIFY_NAMESPACE" --rm --attach=true --restart=Never \
+		--pod-running-timeout="$(WAIT_TIMEOUT)" \
 		--image=image-registry.openshift-image-registry.svc:5000/openshift/cli:latest \
-		--command -- curl -fsS http://s4:5000/api >/dev/null; \
+		--command -- curl -fsS --connect-timeout 10 --max-time 60 http://s4:5000/api >/dev/null; \
 	echo "==> Waiting for the OpenShift AI pipeline server..."; \
 	oc wait datasciencepipelinesapplication/dspa -n "$$VERIFY_NAMESPACE" \
-		--for=condition=Ready --timeout=$(VERIFY_TIMEOUT); \
+		--for=condition=Ready --timeout="$(WAIT_TIMEOUT)"; \
 	oc rollout status deployment/ds-pipeline-dspa -n "$$VERIFY_NAMESPACE" \
-		--timeout=$(VERIFY_TIMEOUT); \
+		--timeout="$(WAIT_TIMEOUT)"; \
 	if [ "$(DEPLOY_EMBEDDING_MODEL)" = true ]; then \
 		echo "==> Verifying embedding-model release..."; \
 		helm status e5-mistral -n "$$VERIFY_NAMESPACE" >/dev/null; \
@@ -618,37 +638,55 @@ push-all-images:
 # ============================================================================
 
 upload-pipelines:
-	@echo "==> Waiting for pipeline server to be ready..." && \
-	until oc get deployment ds-pipeline-dspa -n $(KFP_NAMESPACE) 2>/dev/null; do sleep 5; done && \
-	oc wait deployment/ds-pipeline-dspa -n $(KFP_NAMESPACE) --for=condition=Available --timeout=300s && \
+	@set -e; \
+	echo "==> Waiting for pipeline server to be ready..."; \
+	oc wait deployment/ds-pipeline-dspa -n "$(KFP_NAMESPACE)" \
+		--for=create --timeout="$(WAIT_TIMEOUT)"; \
+	oc wait deployment/ds-pipeline-dspa -n "$(KFP_NAMESPACE)" \
+		--for=condition=Available --timeout="$(WAIT_TIMEOUT)"; \
 	\
-	echo "==> Uploading Kubeflow pipelines..." && \
-	oc delete job upload-kubeflow-pipelines -n $(KFP_NAMESPACE) --ignore-not-found=true && \
+	echo "==> Uploading Kubeflow pipelines..."; \
+	oc delete job upload-kubeflow-pipelines -n "$(KFP_NAMESPACE)" --ignore-not-found=true \
+		--wait=true --timeout="$(WAIT_TIMEOUT)"; \
 	helm template agent-mesh-for-sw resources/helm \
 		--set namespace="$(KFP_NAMESPACE)" \
 		$(HELM_REPO_ARGS) \
 		--set requester="$$(oc whoami)" \
 		$(HELM_PIPELINE_TOOLS_ARGS) \
-		-s templates/upload-pipelines-job.yaml | oc apply -n $(KFP_NAMESPACE) -f -
+		-s templates/upload-pipelines-job.yaml | oc apply -n "$(KFP_NAMESPACE)" -f -; \
+	echo "==> Waiting for pipeline upload to complete..."; \
+	JOB_EXIT=0; \
+	oc wait job/upload-kubeflow-pipelines -n "$(KFP_NAMESPACE)" \
+		--for=condition=complete --timeout="$(WAIT_TIMEOUT)" || JOB_EXIT=$$?; \
+	[ "$$JOB_EXIT" -eq 0 ] || { echo "Error: pipeline upload failed or timed out." >&2; exit "$$JOB_EXIT"; }
 
 upload-mlflow-assets:
-	@echo "==> Deleting existing upload-assets job..." && \
-	oc delete job upload-assets -n $(KFP_NAMESPACE) --ignore-not-found=true && \
+	@set -e; \
+	echo "==> Deleting existing upload-assets job..."; \
+	oc delete job upload-assets -n "$(KFP_NAMESPACE)" --ignore-not-found=true \
+		--wait=true --timeout="$(WAIT_TIMEOUT)"; \
 	\
-	echo "==> Submitting upload-assets job..." && \
+	echo "==> Submitting upload-assets job..."; \
 	helm template agent-mesh-for-sw resources/helm \
 		--set namespace="$(KFP_NAMESPACE)" \
 		$(HELM_REPO_ARGS) \
 		--set requester="$$(oc whoami)" \
 		$(HELM_PIPELINE_TOOLS_ARGS) \
 		--set mlflowGatewayHost="$(GATEWAY_HOST)" \
-		-s templates/upload-assets-job.yaml | oc apply -n $(KFP_NAMESPACE) -f -
+		-s templates/upload-assets-job.yaml | oc apply -n "$(KFP_NAMESPACE)" -f -; \
+	echo "==> Waiting for MLflow asset upload to complete..."; \
+	JOB_EXIT=0; \
+	oc wait job/upload-assets -n "$(KFP_NAMESPACE)" \
+		--for=condition=complete --timeout="$(WAIT_TIMEOUT)" || JOB_EXIT=$$?; \
+	[ "$$JOB_EXIT" -eq 0 ] || { echo "Error: MLflow asset upload failed or timed out." >&2; exit "$$JOB_EXIT"; }
 
 upload-prebuilt-index:
-	@echo "==> Deleting existing prebuilt-index upload job..." && \
-	oc delete job upload-prebuilt-index -n $(KFP_NAMESPACE) --ignore-not-found=true && \
+	@set -e; \
+	echo "==> Deleting existing prebuilt-index upload job..."; \
+	oc delete job upload-prebuilt-index -n "$(KFP_NAMESPACE)" --ignore-not-found=true \
+		--wait=true --timeout="$(WAIT_TIMEOUT)"; \
 	\
-	echo "==> Submitting prebuilt-index upload job..." && \
+	echo "==> Submitting prebuilt-index upload job..."; \
 	helm template agent-mesh-for-sw resources/helm \
 		--set namespace="$(KFP_NAMESPACE)" \
 		$(HELM_REPO_ARGS) \
@@ -656,20 +694,17 @@ upload-prebuilt-index:
 		$(HELM_PIPELINE_TOOLS_ARGS) \
 		--set mlflowGatewayHost="$(GATEWAY_HOST)" \
 		--set prebuiltIndex.enabled=true \
-		-s templates/upload-prebuilt-index-job.yaml | oc apply -n $(KFP_NAMESPACE) -f - && \
-	\
-	echo "==> Waiting for prebuilt-index upload to complete..." && \
-	oc wait --for=condition=complete job/upload-prebuilt-index -n $(KFP_NAMESPACE) --timeout=120s; JOB_EXIT=$$?; \
-	if [ $$JOB_EXIT -eq 0 ]; then \
-		oc logs job/upload-prebuilt-index -n $(KFP_NAMESPACE) | grep -E 'Uploaded prebuilt index bundle|already installed' || true; \
-	else \
-		echo "Prebuilt-index upload job failed; inspect it with: oc logs job/upload-prebuilt-index -n $(KFP_NAMESPACE)"; \
-	fi; \
-	exit $$JOB_EXIT
+		-s templates/upload-prebuilt-index-job.yaml | oc apply -n "$(KFP_NAMESPACE)" -f -; \
+	echo "==> Waiting for prebuilt-index upload to complete..."; \
+	JOB_EXIT=0; \
+	oc wait job/upload-prebuilt-index -n "$(KFP_NAMESPACE)" \
+		--for=condition=complete --timeout="$(WAIT_TIMEOUT)" || JOB_EXIT=$$?; \
+	[ "$$JOB_EXIT" -eq 0 ] || { echo "Error: prebuilt-index upload failed or timed out." >&2; exit "$$JOB_EXIT"; }
 
 run-adhoc-query:
 	@[ -z "$(QUESTION_FILE)" ] && { echo "Error: QUESTION_FILE is required: generate it via wrappers/adhoc.sh." >&2; exit 1; } || true
-	@JOB_ID="$$(date +%Y%m%d%H%M%S)$$(printf '%04x' $$((RANDOM)))" && \
+	@set -e; \
+	JOB_ID="$$(date +%Y%m%d%H%M%S)$$(printf '%04x' $$((RANDOM)))"; \
 	USE_GLOBAL=1 && \
 	if [ -n "$(GIT_REPO)" ]; then USE_GLOBAL=0; fi && \
 	\
@@ -693,19 +728,28 @@ run-adhoc-query:
 		--set analysis.image.tag="$(KFP_ANALYSIS_BASE_IMAGE_TAG)" \
 		-s templates/run-adhoc-query-job.yaml | oc apply -n $(KFP_NAMESPACE) -f - && \
 	\
-	echo "==> Waiting for query to complete..." && \
-	oc wait job/run-adhoc-query-$$JOB_ID --for=condition=complete --timeout=1800s -n $(KFP_NAMESPACE); LOG_EXIT=$$?; \
-	oc logs job/run-adhoc-query-$$JOB_ID -n $(KFP_NAMESPACE); \
-	oc delete configmap adhoc-query-$$JOB_ID -n $(KFP_NAMESPACE) --ignore-not-found=true; \
-	exit $$LOG_EXIT
+	JOB_EXIT=0; \
+	echo "==> Waiting for query to complete..."; \
+	oc wait "job/run-adhoc-query-$$JOB_ID" -n "$(KFP_NAMESPACE)" \
+		--for=condition=complete --timeout="$(ADHOC_TIMEOUT)" || JOB_EXIT=$$?; \
+	oc delete configmap "adhoc-query-$$JOB_ID" -n "$(KFP_NAMESPACE)" --ignore-not-found=true \
+		--wait=true --timeout="$(WAIT_TIMEOUT)" || [ "$$JOB_EXIT" -ne 0 ]; \
+	[ "$$JOB_EXIT" -eq 0 ] || echo "Error: ad-hoc query failed or timed out." >&2; \
+	exit "$$JOB_EXIT"
 
 run-pipelines:
-	@[ -n "$(PIPELINE_GIT_REPO)" ]   && oc patch secret code-understanding-env -n $(KFP_NAMESPACE) \
-		--type=merge -p '{"stringData":{"GIT_REPO":"$(PIPELINE_GIT_REPO)"}}' || true && \
-	[ -n "$(PIPELINE_GIT_BRANCH)" ] && oc patch secret code-understanding-env -n $(KFP_NAMESPACE) \
-		--type=merge -p '{"stringData":{"GIT_BRANCH":"$(PIPELINE_GIT_BRANCH)"}}' || true && \
-	echo "==> Submitting run-pipelines job..." && \
-	oc delete job run-pipelines -n $(KFP_NAMESPACE) --ignore-not-found=true && \
+	@set -e; \
+	if [ -n "$(PIPELINE_GIT_REPO)" ]; then \
+		oc patch secret code-understanding-env -n $(KFP_NAMESPACE) \
+			--type=merge -p '{"stringData":{"GIT_REPO":"$(PIPELINE_GIT_REPO)"}}'; \
+	fi; \
+	if [ -n "$(PIPELINE_GIT_BRANCH)" ]; then \
+		oc patch secret code-understanding-env -n $(KFP_NAMESPACE) \
+			--type=merge -p '{"stringData":{"GIT_BRANCH":"$(PIPELINE_GIT_BRANCH)"}}'; \
+	fi; \
+	echo "==> Submitting run-pipelines job..."; \
+	oc delete job run-pipelines -n $(KFP_NAMESPACE) --ignore-not-found=true \
+		--wait=true --timeout="$(WAIT_TIMEOUT)"; \
 	helm template agent-mesh-for-sw resources/helm \
 		--set namespace="$(KFP_NAMESPACE)" \
 		$(HELM_REPO_ARGS) \
@@ -714,13 +758,12 @@ run-pipelines:
 		--set-string runPipelines.targetPath="$(KFP_DATA_GENERATION_OUTPUT_PATH)" \
 		--set-string runPipelines.graphragSourcePath="$(KFP_DATA_INDEXING_OUTPUT_PATH)" \
 		$(HELM_PIPELINE_TOOLS_ARGS) \
-		-s templates/run-pipelines-job.yaml | oc apply -n $(KFP_NAMESPACE) -f - && \
-	\
-	echo "==> Waiting for run-pipelines container to start..." && \
-	until oc logs job/run-pipelines -n $(KFP_NAMESPACE) >/dev/null 2>&1; do sleep 2; done && \
-	\
-	echo "==> Streaming pipeline run results..." && \
-	oc logs -f job/run-pipelines -n $(KFP_NAMESPACE)
+		-s templates/run-pipelines-job.yaml | oc apply -n $(KFP_NAMESPACE) -f -; \
+	echo "==> Waiting for pipeline submission to complete..."; \
+	JOB_EXIT=0; \
+	oc wait job/run-pipelines -n "$(KFP_NAMESPACE)" \
+		--for=condition=complete --timeout="$(WAIT_TIMEOUT)" || JOB_EXIT=$$?; \
+	[ "$$JOB_EXIT" -eq 0 ] || { echo "Error: pipeline submission failed or timed out." >&2; exit "$$JOB_EXIT"; }
 
 # ============================================================================
 # Observability
@@ -737,11 +780,6 @@ deploy-otel:
 		exit 0; \
 	fi && \
 	\
-	if oc get tempostack $(OTEL_SERVICE_NAME) -n $(OTEL_NAMESPACE) >/dev/null 2>&1; then \
-		echo "==> OTel infrastructure already deployed, skipping."; \
-		exit 0; \
-	fi && \
-	\
 	if [ "$(OTEL_NAMESPACE)" != "$(KFP_NAMESPACE)" ]; then \
 		echo "==> Creating OTel namespace $(OTEL_NAMESPACE)..."; \
 		oc create namespace $(OTEL_NAMESPACE) --dry-run=client -o yaml | oc apply -f -; \
@@ -751,7 +789,14 @@ deploy-otel:
 	helm upgrade $(HELM_UPGRADE_ARGS) \
 		--set otel.namespace=$(OTEL_NAMESPACE) \
 		--set otel.enabled=true \
-		--set otel.name=$(OTEL_SERVICE_NAME)
+		--set otel.name=$(OTEL_SERVICE_NAME) && \
+	echo "==> Waiting for TempoStack and OpenTelemetry Collector..." && \
+	oc wait tempostack/$(OTEL_SERVICE_NAME) -n "$(OTEL_NAMESPACE)" \
+		--for=condition=Ready --timeout="$(WAIT_TIMEOUT)" && \
+	oc wait deployment/$(OTEL_SERVICE_NAME)-collector -n "$(OTEL_NAMESPACE)" \
+		--for=create --timeout="$(WAIT_TIMEOUT)" && \
+	oc rollout status deployment/$(OTEL_SERVICE_NAME)-collector -n "$(OTEL_NAMESPACE)" \
+		--timeout="$(WAIT_TIMEOUT)"
 
 # ============================================================================
 # Console application
@@ -783,7 +828,7 @@ deploy-console-app:
 		--set-file console.jobScripts.runPipelines=workflows/examples/code_understanding/scripts/run_pipelines.sh \
 		--set-file console.jobScripts.mlflowAssetLoader=workflows/examples/code_understanding/loaders/mlflow_asset_loader.py \
 		--set-file console.jobScripts.defaultAssetLoader=workflows/examples/code_understanding/loaders/default_asset_loader.py && \
-	oc rollout status deployment/code-understanding-console -n $(KFP_NAMESPACE) --timeout=300s && \
+	oc rollout status deployment/code-understanding-console -n $(KFP_NAMESPACE) --timeout="$(WAIT_TIMEOUT)" && \
 	ROUTE_HOST="$$(oc get route code-understanding-console -n $(KFP_NAMESPACE) -o jsonpath='{.spec.host}')" && \
 	echo "" && \
 	echo "==> Open the console in your browser:" && \
@@ -825,7 +870,8 @@ deploy-console-plugin: apply-plugin-src
 		--set consolePlugin.consoleBaseUrl="https://$$CONSOLE_HOST" \
 		-s templates/console-plugin.yaml | oc apply -f - && \
 	echo "==> Waiting for plugin-api Route hostname to be assigned..." && \
-	until [ -n "$$(oc get route code-understanding-plugin-api -n $(KFP_NAMESPACE) -o jsonpath='{.spec.host}' 2>/dev/null)" ]; do sleep 3; done && \
+	oc wait route/code-understanding-plugin-api -n "$(KFP_NAMESPACE)" \
+		--for=jsonpath='{.spec.host}' --timeout="$(WAIT_TIMEOUT)" && \
 	API_HOST="$$(oc get route code-understanding-plugin-api -n $(KFP_NAMESPACE) -o jsonpath='{.spec.host}')" && \
 	helm template agent-mesh-for-sw resources/helm \
 		--set namespace="$(KFP_NAMESPACE)" \
@@ -839,8 +885,8 @@ deploy-console-plugin: apply-plugin-src
 		-s templates/console-plugin.yaml | oc apply -f - && \
 	oc rollout restart deployment/code-understanding-console-plugin -n $(KFP_NAMESPACE) && \
 	oc rollout restart deployment/code-understanding-plugin-api -n $(KFP_NAMESPACE) && \
-	oc rollout status deployment/code-understanding-console-plugin -n $(KFP_NAMESPACE) --timeout=300s && \
-	oc rollout status deployment/code-understanding-plugin-api -n $(KFP_NAMESPACE) --timeout=300s && \
+	oc rollout status deployment/code-understanding-console-plugin -n $(KFP_NAMESPACE) --timeout="$(WAIT_TIMEOUT)" && \
+	oc rollout status deployment/code-understanding-plugin-api -n $(KFP_NAMESPACE) --timeout="$(WAIT_TIMEOUT)" && \
 	$(MAKE) enable-console-plugin
 
 enable-console-plugin:
@@ -849,10 +895,15 @@ enable-console-plugin:
 	if echo "$$EXISTING" | grep -q 'code-understanding-console'; then \
 	  echo "Plugin already enabled."; \
 	else \
-	  oc patch consoles.operator.openshift.io cluster --type=json \
-	    -p='[{"op":"add","path":"/spec/plugins/-","value":"code-understanding-console"}]' && \
-	  echo "Plugin enabled. Console may take 1-2 minutes to reload."; \
+	  CONSOLE_GENERATION="$$(oc patch consoles.operator.openshift.io cluster --type=json \
+	    -p='[{"op":"add","path":"/spec/plugins/-","value":"code-understanding-console"}]' \
+	    -o jsonpath='{.metadata.generation}')" && \
+	  echo "==> Waiting for the OpenShift console to load the plugin..." && \
+	  oc wait consoles.operator.openshift.io/cluster \
+	    --for=jsonpath='{.status.observedGeneration}'="$$CONSOLE_GENERATION" \
+	    --timeout="$(WAIT_TIMEOUT)"; \
 	fi && \
+	oc rollout status deployment/console -n openshift-console --timeout="$(WAIT_TIMEOUT)" && \
 	CONSOLE_HOST="$$(oc get route console -n openshift-console -o jsonpath='{.spec.host}')" && \
 	echo "" && \
 	echo "==> Open in OpenShift console:" && \
