@@ -1,3 +1,4 @@
+{{- $storage := index .Values "aws-compatible-storage" }}
 apiVersion: datasciencepipelinesapplications.opendatahub.io/v1
 kind: DataSciencePipelinesApplication
 metadata:
@@ -24,16 +25,16 @@ spec:
     disableHealthCheck: false
     enableExternalRoute: false
     externalStorage:
-      host: s4.{{ .Values.namespace }}.svc.cluster.local
-      port: "7480"
+      host: {{ include "agent-mesh.awsCompatibleStorage.fullname" . }}.{{ .Values.namespace }}.svc.cluster.local
+      port: {{ include "agent-mesh.awsCompatibleStorage.apiPort" . | quote }}
       scheme: http
       secure: false
-      region: {{ .Values.s4.s3.region }}
+      region: {{ $storage.s3.region }}
       bucket: {{ .Values.pipelineStorage.bucket }}
       s3CredentialsSecret:
         accessKey: AWS_ACCESS_KEY_ID
         secretKey: AWS_SECRET_ACCESS_KEY
-        secretName: s4-credentials
+        secretName: {{ include "agent-mesh.awsCompatibleStorage.secretName" . }}
   persistenceAgent:
     deploy: true
     numWorkers: 2

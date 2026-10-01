@@ -1,4 +1,5 @@
-{{- if and .Values.s4.enabled .Values.s4Buckets.create }}
+{{- $storage := index .Values "aws-compatible-storage" }}
+{{- if and $storage.enabled .Values.awsCompatibleStorageBuckets.create }}
 {{- $jobConfig := dict "applicationBucket" .Values.applicationStorage.bucket "pipelineBucket" .Values.pipelineStorage.bucket "tempoEnabled" .Values.otel.enabled "tempoBucket" .Values.otel.tempo.bucket "image" .Values.jobImages.python }}
 apiVersion: batch/v1
 kind: Job
@@ -35,9 +36,9 @@ spec:
             - name: HOME
               value: /tmp
             - name: S3_ENDPOINT
-              value: http://s4:7480
+              value: {{ printf "http://%s:%s" (include "agent-mesh.awsCompatibleStorage.fullname" .) (include "agent-mesh.awsCompatibleStorage.apiPort" .) | quote }}
             - name: S3_REGION
-              value: {{ .Values.s4.s3.region | quote }}
+              value: {{ $storage.s3.region | quote }}
             - name: APPLICATION_BUCKET
               value: {{ .Values.applicationStorage.bucket | quote }}
             - name: PIPELINE_BUCKET
@@ -49,12 +50,12 @@ spec:
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
-                  name: s4-credentials
+                  name: {{ include "agent-mesh.awsCompatibleStorage.secretName" . }}
                   key: AWS_ACCESS_KEY_ID
             - name: AWS_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: s4-credentials
+                  name: {{ include "agent-mesh.awsCompatibleStorage.secretName" . }}
                   key: AWS_SECRET_ACCESS_KEY
           command: ["/bin/bash", "-ec"]
           args:

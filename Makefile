@@ -154,6 +154,7 @@ HELM_UPGRADE_ARGS = agent-mesh-for-sw resources/helm \
 .PHONY: \
 	help \
 	help-all \
+	helm-dependencies \
 	helm-lint \
 	helm-template \
 	verify-secrets \
@@ -222,6 +223,7 @@ help-all:
 	@echo ""
 	@echo "Testing:"
 	@echo "  test-all                    Run all test suites"
+	@echo "  helm-dependencies           Download Helm chart dependencies"
 	@echo "  helm-lint                   Lint the deployment chart"
 	@echo "  helm-template               Render the deployment chart"
 	@echo "  verify-secrets              Check tracked files for committed secrets"
@@ -278,7 +280,7 @@ help-all:
 # Installation and deployment
 # ============================================================================
 
-install:
+install: helm-dependencies
 	@set -e; \
 	[ -n "$(AWS_ACCESS_KEY_ID)" ] || { echo "AWS_ACCESS_KEY_ID must be set" >&2; exit 1; }; \
 	[ -n "$(AWS_SECRET_ACCESS_KEY)" ] || { echo "AWS_SECRET_ACCESS_KEY must be set" >&2; exit 1; }; \
@@ -312,13 +314,13 @@ install:
 		--create-namespace \
 		--set "requester=$$(oc whoami)" \
 		$(HELM_REPO_ARGS) \
-		--set-string "s4.s3.accessKeyId=$(AWS_ACCESS_KEY_ID)" \
-		--set-string "s4.s3.secretAccessKey=$(AWS_SECRET_ACCESS_KEY)" \
+		--set-string "aws-compatible-storage.s3.accessKeyId=$(AWS_ACCESS_KEY_ID)" \
+		--set-string "aws-compatible-storage.s3.secretAccessKey=$(AWS_SECRET_ACCESS_KEY)" \
 		--set-string "applicationStorage.bucket=$(AWS_S3_BUCKET)" \
-		--set s4.auth.enabled=true \
-		--set-string "s4.auth.username=$(S4_UI_USERNAME)" \
-		--set-string "s4.auth.password=$(S4_UI_PASSWORD)" \
-		--set s4.route.enabled=true \
+		--set aws-compatible-storage.auth.enabled=true \
+		--set-string "aws-compatible-storage.auth.username=$(S4_UI_USERNAME)" \
+		--set-string "aws-compatible-storage.auth.password=$(S4_UI_PASSWORD)" \
+		--set aws-compatible-storage.route.enabled=true \
 		$(HELM_WORKFLOW_IMAGE_ARGS) \
 		$(HELM_PIPELINE_TOOLS_ARGS) \
 		--set "clusterDomain=$(CLUSTER_DOMAIN)" \
@@ -513,10 +515,13 @@ apply-secrets:
 # Testing
 # ============================================================================
 
-helm-lint:
+helm-dependencies:
+	helm dependency update $(CHART_DIR)
+
+helm-lint: helm-dependencies
 	helm lint $(CHART_DIR)
 
-helm-template:
+helm-template: helm-dependencies
 	@VERIFY_NAMESPACE="$(or $(NAMESPACE),$(KFP_NAMESPACE),demo)"; \
 	helm template $(RELEASE) $(CHART_DIR) \
 		--namespace "$$VERIFY_NAMESPACE" \
@@ -536,7 +541,7 @@ verify-deploy: verify-secrets
 	: "$${VERIFY_NAMESPACE:?Set NAMESPACE or KFP_NAMESPACE}"; \
 	echo "==> Verifying Helm release $(RELEASE) in $$VERIFY_NAMESPACE..."; \
 	helm status $(RELEASE) -n "$$VERIFY_NAMESPACE" >/dev/null; \
-	echo "==> Waiting for S4..."; \
+	echo "==> Waiting for aws-compatible-storage (S4)..."; \
 	oc rollout status deployment/s4 -n "$$VERIFY_NAMESPACE" --timeout="$(WAIT_TIMEOUT)"; \
 	S4_SECRET_STATE=$$(oc get secret s4-credentials -n "$$VERIFY_NAMESPACE" \
 		-o go-template='{{if and .data.AWS_ACCESS_KEY_ID .data.AWS_SECRET_ACCESS_KEY}}configured{{else}}missing{{end}}'); \

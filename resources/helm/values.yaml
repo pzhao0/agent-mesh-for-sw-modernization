@@ -17,7 +17,7 @@ imageStreams:
 repoUrl: ""
 repoRef: main
 
-s4:
+aws-compatible-storage:
   enabled: true
   fullnameOverride: s4
   image:
@@ -47,7 +47,7 @@ pipelineStorage:
 applicationStorage:
   bucket: data
 
-s4Buckets:
+awsCompatibleStorageBuckets:
   create: true
 
 jobImages:
