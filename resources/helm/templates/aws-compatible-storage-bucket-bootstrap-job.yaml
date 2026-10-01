@@ -1,10 +1,11 @@
 {{- $storage := index .Values "aws-compatible-storage" }}
 {{- if and $storage.enabled .Values.awsCompatibleStorageBuckets.create }}
+{{- $storageName := include "agent-mesh.awsCompatibleStorage.fullname" . }}
 {{- $jobConfig := dict "applicationBucket" .Values.applicationStorage.bucket "pipelineBucket" .Values.pipelineStorage.bucket "tempoEnabled" .Values.otel.enabled "tempoBucket" .Values.otel.tempo.bucket "image" .Values.jobImages.python }}
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: s4-bucket-bootstrap-{{ $jobConfig | toJson | sha256sum | trunc 8 }}
+  name: {{ printf "%s-bucket-bootstrap-%s" ($storageName | trunc 37 | trimSuffix "-") ($jobConfig | toJson | sha256sum | trunc 8) }}
   namespace: {{ .Values.namespace }}
   labels:
     app.kubernetes.io/part-of: agent-mesh-for-sw
@@ -35,8 +36,10 @@ spec:
           env:
             - name: HOME
               value: /tmp
+            - name: STORAGE_NAME
+              value: {{ $storageName | quote }}
             - name: S3_ENDPOINT
-              value: {{ printf "http://%s:%s" (include "agent-mesh.awsCompatibleStorage.fullname" .) (include "agent-mesh.awsCompatibleStorage.apiPort" .) | quote }}
+              value: {{ printf "http://%s:%s" $storageName (include "agent-mesh.awsCompatibleStorage.apiPort" .) | quote }}
             - name: S3_REGION
               value: {{ $storage.s3.region | quote }}
             - name: APPLICATION_BUCKET
@@ -84,7 +87,7 @@ spec:
                   except Exception as error:
                       if attempt == 59:
                           raise
-                      print(f"S4 is not ready ({error}); retrying in 5 seconds")
+                      print(f"{os.environ['STORAGE_NAME']} is not ready ({error}); retrying in 5 seconds")
                       time.sleep(5)
 
               names = {
