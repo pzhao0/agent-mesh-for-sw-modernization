@@ -15,21 +15,20 @@ Analyze legacy code with GraphRAG on Red Hat OpenShift AI to uncover dependencie
   - [Minimum software requirements](#minimum-software-requirements)
   - [Required user permissions](#required-user-permissions)
 - [Deploy](#deploy)
-  - [Clone the repository](#clone-the-repository)
-  - [Prepare the model endpoints](#prepare-the-model-endpoints)
-  - [Configure the environment](#configure-the-environment)
-  - [Install on OpenShift AI](#install-on-openshift-ai)
-  - [Verify the deployment](#verify-the-deployment)
-  - [Ask a question using the prebuilt index](#ask-a-question-using-the-prebuilt-index)
-  - [Run your first code analysis](#run-your-first-code-analysis)
-    - [Step 1: Analyze the sample repository](#step-1-analyze-the-sample-repository)
-    - [Step 2: Review the modernization results](#step-2-review-the-modernization-results)
-    - [Step 3: Ask questions about the code](#step-3-ask-questions-about-the-code)
-  - [Analyze your own repository](#analyze-your-own-repository)
-  - [Analyze multiple repositories](#analyze-multiple-repositories)
-  - [Explore the optional console](#explore-the-optional-console)
-  - [What you've accomplished](#what-youve-accomplished)
-  - [Delete](#delete)
+  - [1. Clone the repository](#1-clone-the-repository)
+  - [2. Prepare the model endpoints](#2-prepare-the-model-endpoints)
+  - [3. Configure the environment](#3-configure-the-environment)
+  - [4. Install on OpenShift AI](#4-install-on-openshift-ai)
+  - [5. Ask a question using the prebuilt index](#5-ask-a-question-using-the-prebuilt-index)
+  - [6. Run your first code analysis](#6-run-your-first-code-analysis)
+    - [6.1 Analyze the sample repository](#61-analyze-the-sample-repository)
+    - [6.2 Review the modernization results](#62-review-the-modernization-results)
+    - [6.3 Ask questions about the code](#63-ask-questions-about-the-code)
+  - [7. Analyze your own repository](#7-analyze-your-own-repository)
+  - [8. Analyze multiple repositories](#8-analyze-multiple-repositories)
+  - [9. Explore the optional console](#9-explore-the-optional-console)
+  - [10. What you've accomplished](#10-what-youve-accomplished)
+  - [11. Delete](#11-delete)
 - [Reference](#reference)
   - [How the workflow works](#how-the-workflow-works)
   - [Configuration variables](#configuration-variables)
@@ -162,7 +161,7 @@ or equivalent delegated permissions for those features.
 Follow the steps in order. The first run uses the public sample repository so
 you can see the complete analysis before pointing the workflow at your own code.
 
-### Clone the repository
+### 1. Clone the repository
 
 ```sh
 git clone https://github.com/rh-ai-quickstart/agent-mesh-for-sw-modernization.git
@@ -172,7 +171,7 @@ cd agent-mesh-for-sw-modernization
 Run the remaining commands from this directory. Log in to OpenShift using the
 login command provided by your cluster's web console before installing.
 
-### Prepare the model endpoints
+### 2. Prepare the model endpoints
 
 Provide reachable OpenAI-compatible endpoints for the chat and embedding
 roles. These model guides show example deployments:
@@ -189,7 +188,7 @@ You can have `make install` deploy the bundled embedding model instead of
 supplying an external embedding endpoint. The coding model is not needed for
 this Code Understanding walkthrough.
 
-### Configure the environment
+### 3. Configure the environment
 
 Copy the Make-compatible template and edit `.env`:
 
@@ -210,7 +209,7 @@ source repository requires authentication.
 
 See [Configuration variables](#configuration-variables) for the full list.
 
-### Install on OpenShift AI
+### 4. Install on OpenShift AI
 
 Install the Helm release, register workbench images, upload the pipelines, and
 load the sample index:
@@ -228,7 +227,7 @@ make install DEPLOY_EMBEDDING_MODEL=true
 
 OpenTelemetry and Tempo are optional and disabled by default. To deploy them as part of installation, run `make install DEPLOY_OTEL=true`.
 
-### Ask a question using the prebuilt index
+### 5. Ask a question using the prebuilt index
 
 The default installation uploads a prebuilt index for the sample Tic-Tac-Toe
 repository. You can query it immediately, before running a pipeline:
@@ -242,12 +241,12 @@ wrappers/adhoc.sh \
 
 The wrapper prints the answer when the query job completes.
 
-### Run your first code analysis
-
 The following three steps take you from a source repository to a report and
 then to a specific question about that report.
 
-#### Step 1: Analyze the sample repository
+### 6. Run your first code analysis
+
+#### 6.1 Analyze the sample repository
 
 Confirm that `.env` points `GIT_REPO` to the sample Tic-Tac-Toe repository and
 `GIT_BRANCH` to `main`. Then submit its single-repository pipeline:
@@ -267,7 +266,7 @@ This step can take a while. GraphRAG indexing is compute-intensive, and the
 run time depends on the repository size and the resources available to the
 pipeline.
 
-#### Step 2: Review the modernization results
+#### 6.2 Review the modernization results
 
 Open the completed run in OpenShift AI Pipelines or MLflow and inspect the analysis
 task's Markdown migration report. Look for the components and dependencies it
@@ -282,7 +281,7 @@ the query step.
 Expected outcome: a Markdown migration report is available for the sample
 repository.
 
-#### Step 3: Ask questions about the code
+#### 6.3 Ask questions about the code
 
 You can use the same command as earlier to ask additional questions targeting the index you just created:
 
@@ -300,7 +299,7 @@ a multi-repository index, which may not exist yet.
 
 Expected outcome: the terminal prints an answer about the selected repository.
 
-### Analyze your own repository
+### 7. Analyze your own repository
 
 Set `GIT_REPO` and `GIT_BRANCH` in `.env` to your repository and branch. For a
 private repository, also provide credentials in `GIT_USERNAME` and `GIT_TOKEN`.
@@ -315,7 +314,7 @@ Wait for the new `single_repo_<timestamp>` run to succeed. Review its Markdown
 report and repeat the query command with your own repository URL and branch.
 The analysis reads source code; it does not modify the analyzed repository.
 
-### Analyze multiple repositories
+### 8. Analyze multiple repositories
 
 Edit `[repo_list.json](workflows/examples/code_understanding/assets/repos/repo_list.json)`
 so it contains the repositories you want to analyze. Each array entry has a
@@ -337,7 +336,7 @@ wrappers/adhoc.sh "Which repositories share dependencies that affect migration o
 
 
 
-### Explore the optional console
+### 9. Explore the optional console
 
 The standalone Code Understanding console offers a visual way to select
 repositories, start analysis, inspect reports, and ask questions. To deploy the application:
@@ -361,14 +360,14 @@ An OpenShift console plugin is also available for administrators. It requires
 OpenShift 4.21 or later and cluster-wide console permissions. Deploy it with
 `make deploy-console-plugin`; the target enables the plugin and prints its URL.
 
-### What you've accomplished
+### 10. What you've accomplished
 
 You have deployed the Code Understanding workflow, run its three pipeline
 stages on a sample repository, examined a migration report, and asked a
 follow-up question grounded in the indexed code. You can now analyze your own
 repository or compare several repositories in one combined index.
 
-### Delete
+### 11. Delete
 
 When you have finished, run:
 
