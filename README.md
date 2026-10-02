@@ -237,9 +237,6 @@ wrappers/adhoc.sh \
 
 The wrapper prints the answer when the query job completes.
 
-The following three steps take you from a source repository to a report and
-then to a specific question about that report.
-
 ### 6. Run your first code analysis
 
 #### 6.1 Analyze the sample repository
@@ -255,12 +252,14 @@ The command submits a run named `single_repo_<timestamp>` and prints its run
 ID. Submission is not pipeline completion. In your OpenShift AI project's
 Pipelines view, wait for that run to succeed before reviewing its report.
 
-Expected outcome: the run reaches **Succeeded** after data generation,
-indexing, and analysis finish.
-
 This step can take a while. GraphRAG indexing is compute-intensive, and the
 run time depends on the repository size and the resources available to the
 pipeline.
+
+**Expected outcome:** the run reaches **Succeeded** after data generation,
+indexing, and analysis finish.
+
+
 
 #### 6.2 Review the modernization results
 
@@ -274,7 +273,7 @@ The report gives you a starting point for discussion, not an automatic code
 change. If the run fails, inspect the failed pipeline task before moving to
 the query step.
 
-Expected outcome: a Markdown migration report is available for the sample
+**Expected outcome:** a Markdown migration report is available for the sample
 repository.
 
 #### 6.3 Ask questions about the code
@@ -293,7 +292,7 @@ Try another question, such as which modules depend on a component you plan to
 replace. Supplying `--git-repo` matters here: without it, the wrapper queries
 a multi-repository index, which may not exist yet.
 
-Expected outcome: the terminal prints an answer about the selected repository.
+**Expected outcome:** the terminal prints an answer about the selected repository.
 
 ### 7. Analyze your own repository
 
