@@ -114,9 +114,8 @@ The architecture illustrates the path from raw source code through automated dat
 | -------------------------- | ------------------------------------------------------------------- | ------------------------------------------------- |
 | CPU and memory             | 8+ vCPUs and 24+ GiB RAM                                            | Quickstart workloads, separate from model serving |
 | Persistent storage         | Default `StorageClass` able to provision a 50 GiB ReadWriteOnce PVC | S4-backed S3-compatible object storage             |
-| NVIDIA H100 GPU            | 1, if hosting the example `gpt-oss-120b` endpoint                   | GraphRAG chat model                               |
+| NVIDIA L40S GPU            | 1, if hosting the example `gpt-oss-120b` endpoint                   | GraphRAG chat model                               |
 | NVIDIA L40S GPU            | 1, if hosting the example `e5-mistral-7b-instruct` endpoint         | Embedding model                                   |
-| NVIDIA H200 GPU (optional) | 1, if hosting the example `gemma-4-31B-it` endpoint                 | Coding agent integration                          |
 
 
 If you use existing OpenAI-compatible model endpoints, their GPUs do not need
@@ -125,16 +124,14 @@ to be part of the Quickstart cluster.
 ### Minimum software requirements
 
 - Red Hat OpenShift 4.18+ (OpenShift 4.21+ for the optional UI add-ons).
-- Red Hat OpenShift AI 2.22+.
+- Red Hat OpenShift AI 3.4+.
 - MLflow (the integration assumes OpenShift AI 3.4+). [Installation](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/working_with_mlflow/installing-mlflow_mlflow)
-- OpenShift AI Model Registry. [Installation](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/2.25/html-single/enabling_the_model_registry_component/index)
-- OpenShift AI Model Catalog. [Installation](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html-single/working_with_the_model_catalog/index)
 - OpenShift AI Pipelines. [Installation](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/openshift_ai_tutorial_-_fraud_detection_example/setting-up-a-project-and-storage#enabling-ai-pipelines)
-- OpenShift CLI (`oc`).
-- Helm CLI (`helm`).
-- Make (`make`).
-- `jq` CLI (`jq`).
-- `uv` CLI (`uv`).
+- OpenShift CLI (`oc`). [Installation](https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/cli_tools/openshift-cli-oc)
+- Helm CLI (`helm`). [Installation](https://helm.sh/docs/intro/install/)
+- Make (`make`). [Download and installation](https://www.gnu.org/software/make/)
+- `jq` CLI (`jq`). [Download and installation](https://jqlang.org/download/)
+- `uv` CLI (`uv`). [Installation](https://docs.astral.sh/uv/getting-started/installation/)
 - **Optional:** Red Hat build of OpenTelemetry Operator. [Installation](https://docs.redhat.com/en/documentation/openshift_container_platform/4.18/html/distributed_tracing/distributed-tracing-otel-install)
 - **Optional:** Tempo Operator. [Installation](https://docs.redhat.com/en/documentation/openshift_container_platform/4.18/html/distributed_tracing/distributed-tracing-tempo-install)
 
@@ -181,12 +178,10 @@ roles. These model guides show example deployments:
 | ----------------------- | ---------------------------------- | ---------------------------------------------------------------------------------- |
 | GraphRAG chat           | `gpt-oss-120b`                     | [Deploy the chat model](resources/models/deploying-gpt-oss-120b.md)                |
 | GraphRAG embeddings     | `e5-mistral-7b-instruct`           | [Deploy the embedding model](resources/models/deploying-e5-mistral-7b-instruct.md) |
-| Coding agent (optional) | `gemma-4-31B-it` or `gpt-oss-120b` | [Deploy the optional coding model](resources/models/deploying-gemma-4-31b.md)      |
 
 
 You can have `make install` deploy the bundled embedding model instead of
-supplying an external embedding endpoint. The coding model is not needed for
-this Code Understanding walkthrough.
+supplying an external embedding endpoint.
 
 ### 3. Configure the environment
 
@@ -245,11 +240,12 @@ The wrapper prints the answer when the query job completes.
 
 #### 6.1 Analyze the sample repository
 
-Confirm that `.env` points `GIT_REPO` to the sample Tic-Tac-Toe repository and
-`GIT_BRANCH` to `main`. Then submit its single-repository pipeline:
+To analyze the sample Tic-Tac-Toe repository, submit its single-repository pipeline:
 
 ```sh
-make run-pipelines ARGS="--single-repo"
+make run-pipelines ARGS="--single-repo" \
+  PIPELINE_GIT_REPO=https://github.com/agapebondservant/tic-tac-toe-sample \
+  PIPELINE_GIT_BRANCH=main
 ```
 
 The command submits a run named `single_repo_<timestamp>` and prints its run
@@ -350,15 +346,7 @@ repositories, start analysis, inspect reports, and ask questions. To deploy the 
 make deploy-console-app
 ```
 
-The target prints its route. You can also reach the deployed service through a local
-port-forward:
-
-```sh
-make port-forward-console-app
-```
-
-Open `http://localhost:8080` while that command is running. For local console
-development, `make run-console-app` starts the application on the same address.
+The target prints its route. 
 
 An OpenShift console plugin is also available for administrators. It requires
 OpenShift 4.21 or later and cluster-wide console permissions. Deploy it with
