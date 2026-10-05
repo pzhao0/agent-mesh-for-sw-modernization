@@ -78,6 +78,72 @@ def test_trigger_run_submits_latest_version_and_uploads_repo_list(monkeypatch):
     assert uploads[0][1]["tags"] == {"kfp_run_id": "run-123"}
 
 
+def test_trigger_run_without_repos_skips_repo_list_upload(monkeypatch):
+    run_calls = []
+    namespaces = []
+    loader_calls = []
+
+    class FakeClient:
+        def create_experiment(self, *, name):
+            assert name == "Default"
+            return SimpleNamespace(experiment_id="experiment-1")
+
+        def run_pipeline(self, **kwargs):
+            run_calls.append(kwargs)
+            return SimpleNamespace(run_id="run-single")
+
+    client = FakeClient()
+    monkeypatch.setattr(
+        trigger_run_service,
+        "create_client",
+        lambda namespace=None: namespaces.append(namespace) or client,
+    )
+    monkeypatch.setattr(
+        trigger_run_service,
+        "find_pipeline_id",
+        lambda actual_client, name: "pipeline-1",
+    )
+    monkeypatch.setattr(
+        trigger_run_service,
+        "latest_version_id",
+        lambda actual_client, pipeline_id: "version-2",
+    )
+
+    loader_module = ModuleType("loaders.default_asset_loader")
+
+    class FakeLoader:
+        def __init__(self):
+            loader_calls.append("constructed")
+
+        def log_static_asset(self, *args, **kwargs):
+            loader_calls.append((args, kwargs))
+
+    loader_module.DefaultAssetLoader = FakeLoader
+    monkeypatch.setitem(sys.modules, "loaders.default_asset_loader", loader_module)
+
+    run = trigger_run_service.trigger_run(
+        pipeline_name="single_repo",
+        run_name="single_repo_test",
+        params={"git_repo": "https://github.com/example/repo"},
+        repos=None,
+        namespace="test-namespace",
+    )
+
+    assert run.run_id == "run-single"
+    assert namespaces == ["test-namespace"]
+    assert run_calls == [
+        {
+            "experiment_id": "experiment-1",
+            "job_name": "single_repo_test",
+            "pipeline_id": "pipeline-1",
+            "version_id": "version-2",
+            "params": {"git_repo": "https://github.com/example/repo"},
+            "enable_caching": False,
+        }
+    ]
+    assert loader_calls == []
+
+
 def test_get_multi_repo_list_retries_with_run_tag(monkeypatch):
     attempts = []
     sleeps = []
