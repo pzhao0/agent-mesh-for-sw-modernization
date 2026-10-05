@@ -254,7 +254,9 @@ make run-pipelines ARGS="--single-repo"
 
 The command submits a run named `single_repo_<timestamp>` and prints its run
 ID. Submission is not pipeline completion. In your OpenShift AI project's
-Pipelines view, wait for that run to succeed before reviewing its report.
+Pipelines view, wait for that run to succeed before reviewing its report. You can find this by navigating to **Develop & train > Pipelines > Runs** in the Openshift AI console. 
+
+![Openshift AI Pipelines](docs/images/pipelines.png)
 
 This step can take a while. GraphRAG indexing is compute-intensive, and the
 run time depends on the repository size and the resources available to the
@@ -267,7 +269,9 @@ indexing, and analysis finish.
 
 #### 6.2 Review the modernization results
 
-Open the completed run in OpenShift AI Pipelines or MLflow and inspect the analysis
+![Openshift AI Pipelines](docs/images/mlflow_report.png)
+
+Open the completed run in MLflow and inspect the analysis
 task's Markdown migration report. Look for the components and dependencies it
 identifies, then compare its suggested migration order with the sample source
 code. The report is also available through the optional Code Understanding
@@ -337,6 +341,8 @@ wrappers/adhoc.sh "Which repositories share dependencies that affect migration o
 
 ### 9. Explore the optional console
 
+#### 9.1 Deploying the console
+
 The standalone Code Understanding console offers a visual way to select
 repositories, start analysis, inspect reports, and ask questions. To deploy the application:
 
@@ -344,8 +350,7 @@ repositories, start analysis, inspect reports, and ask questions. To deploy the 
 make deploy-console-app
 ```
 
-The target prints its route. In the console, select an indexed repository under **Recent Runs** to inspect a completed report, and use **Chat** for a
-follow-up question. You can also reach the deployed service through a local
+The target prints its route. You can also reach the deployed service through a local
 port-forward:
 
 ```sh
@@ -358,6 +363,24 @@ development, `make run-console-app` starts the application on the same address.
 An OpenShift console plugin is also available for administrators. It requires
 OpenShift 4.21 or later and cluster-wide console permissions. Deploy it with
 `make deploy-console-plugin`; the target enables the plugin and prints its URL.
+
+#### 9.2 Console overview
+
+![Console repositories tab](docs/images/console_repositories.png)
+
+The **Repositories** tab shows a list of example repositories to run the analysis on. You can add your own using the input box on the bottom.
+
+#### 9.3 Running analysis and viewing reports
+
+![Console analysis tab](docs/images/console_analysis.png)
+
+On the left-hand side, you should be able to see the run you just completed under **Recent Runs**. Clicking on the report option will bring you to the **Analysis** tab and display the generated report. You can also use this tab to run analysis on the selected repositories in the **Repositories** tab.
+
+#### 9.4 Chat interface
+
+![Console chat tab](docs/images/console_chat.png)
+
+Navigating to the **Chat** tab will allow you to ask questions on repositories you have indexed to obtain GraphRAG-informed responses. Test it out with the sample queries provided, or you can bring in your own questions!
 
 ### 10. What you've accomplished
 
