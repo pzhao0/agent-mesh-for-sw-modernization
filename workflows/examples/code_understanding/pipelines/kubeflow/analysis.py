@@ -28,6 +28,41 @@ _AGENTMESH_INSTALLABLE_URL = get_pip_installable_git_url(
 @inject_secret_as_env(secret_name="code-understanding-env")
 @inject_secret_as_env(secret_name="git-credentials")
 @dsl.component(base_image=ANALYSIS_BASE_IMAGE, packages_to_install=[_AGENTMESH_INSTALLABLE_URL])
+def load_existing_index_op(
+    graphrag_dir: Output[Dataset],
+    git_repo: str = "",
+    git_branch: str = "main",
+    multi_repo: bool = False,
+):
+    """Load an MLflow index into the artifact format used by the analysis stage."""
+
+    from pipelines.base.data_generation import generate_git_slug
+    from utils.graphrag_utils import DependencyAnalyzer
+    from utils.kubeflow_utils import setup_logging, write_to_output_artifact
+
+    setup_logging()
+
+    if not multi_repo and not git_repo:
+        raise ValueError("git_repo is required to load a single-repository index")
+
+    git_slug = generate_git_slug(git_repo, git_branch) if not multi_repo else ""
+    index_label = "combined multi-repository" if multi_repo else f"{git_repo} @ {git_branch}"
+
+    with write_to_output_artifact(graphrag_dir) as tmp_graphrag:
+        try:
+            DependencyAnalyzer.download_graphrag_directory(
+                download_dir=tmp_graphrag,
+                git_slug=git_slug,
+                multi_repo=multi_repo,
+                git_repo=git_repo,
+            )
+        except Exception as exc:
+            raise RuntimeError(f"Could not load the existing index for {index_label}") from exc
+
+
+@inject_secret_as_env(secret_name="code-understanding-env")
+@inject_secret_as_env(secret_name="git-credentials")
+@dsl.component(base_image=ANALYSIS_BASE_IMAGE, packages_to_install=[_AGENTMESH_INSTALLABLE_URL])
 def generate_migration_report_op(
     graphrag_dir: Input[Dataset],
     report: Output[Markdown],
