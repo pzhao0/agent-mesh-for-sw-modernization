@@ -69,7 +69,13 @@ def generate_migration_report_op(
     git_repo: str = "",
     git_branch: str = "",
     multi_repo: bool = False,
+    kfp_run_id: str = "",
 ):
+
+    import os
+
+    if kfp_run_id:
+        os.environ["KFP_RUN_ID"] = kfp_run_id
 
     from pipelines.base.analysis import write_migration_report
     from utils.kubeflow_utils import read_from_input_artifact, setup_logging
@@ -88,8 +94,15 @@ def generate_migration_report_op(
 
 @inject_secret_as_env(secret_name="code-understanding-env")
 @dsl.component(base_image=ANALYSIS_BASE_IMAGE, packages_to_install=[_AGENTMESH_INSTALLABLE_URL])
-def run_analysis_multi_repo_op(graphrag_dir: Input[Dataset], report: Output[Markdown]):
+def run_analysis_multi_repo_op(
+    graphrag_dir: Input[Dataset], report: Output[Markdown], kfp_run_id: str = ""
+):
     """Runs migration report generation across the combined multi-repo GraphRAG index."""
+
+    import os
+
+    if kfp_run_id:
+        os.environ["KFP_RUN_ID"] = kfp_run_id
 
     from pipelines.base.analysis import write_migration_report
     from utils.kubeflow_utils import read_from_input_artifact, setup_logging
@@ -113,17 +126,21 @@ def _run_pipeline(
     multi_repo: bool = False,
 ):
 
-    task = generate_migration_report_op(
-        graphrag_dir=graphrag_dir, git_repo=git_repo, git_branch=git_branch, multi_repo=multi_repo
+    generate_migration_report_op(
+        graphrag_dir=graphrag_dir,
+        git_repo=git_repo,
+        git_branch=git_branch,
+        multi_repo=multi_repo,
+        kfp_run_id=dsl.PIPELINE_JOB_ID_PLACEHOLDER,
     )
-    task.set_env_variable("KFP_RUN_ID", dsl.PIPELINE_JOB_ID_PLACEHOLDER)
 
 
 @dsl.pipeline(name="graphrag-analysis-multi-repo-pipeline")
 def _run_multi_repo_pipeline(graphrag_dir: Input[Dataset]):
 
-    task = run_analysis_multi_repo_op(graphrag_dir=graphrag_dir)
-    task.set_env_variable("KFP_RUN_ID", dsl.PIPELINE_JOB_ID_PLACEHOLDER)
+    run_analysis_multi_repo_op(
+        graphrag_dir=graphrag_dir, kfp_run_id=dsl.PIPELINE_JOB_ID_PLACEHOLDER
+    )
 
 
 ##############################################################################
