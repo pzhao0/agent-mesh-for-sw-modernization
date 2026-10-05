@@ -20,8 +20,7 @@ from utils.pipeline_utils import uses_kfp  # noqa: E402
 
 if uses_kfp():
 
-    from pipelines.kubeflow.analysis import AnalysisPipeline
-    from pipelines.kubeflow.analysis import load_existing_index_op
+    from pipelines.kubeflow.analysis import AnalysisPipeline, load_existing_index_op
     from pipelines.kubeflow.data_generation import DataGenerationPipeline
     from pipelines.kubeflow.indexing import IndexingPipeline
 
