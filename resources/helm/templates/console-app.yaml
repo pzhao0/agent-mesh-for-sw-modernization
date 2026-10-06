@@ -28,6 +28,8 @@ spec:
           env:
             - name: KFP_NAMESPACE
               value: "{{ .Values.namespace }}"
+            - name: MLFLOW_WORKSPACE
+              value: "{{ .Values.namespace }}"
             - name: KFP_HOST
               value: "https://ds-pipeline-dspa.{{ .Values.namespace }}.svc.cluster.local:8443"
             - name: AGENTMESH_REPO_URL
