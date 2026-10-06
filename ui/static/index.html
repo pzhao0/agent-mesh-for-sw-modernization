@@ -630,15 +630,29 @@
       if (typeof mermaid === "undefined") return;
       const nodes = Array.from(container.querySelectorAll("pre.mermaid")).filter(n => !n.dataset.processed);
       if (!nodes.length) return;
+      const showRenderFailure = (node) => {
+        node.dataset.processed = "true";
+        node.classList.remove("mermaid");
+        node.textContent = "Unable to be rendered.";
+      };
       // Render one diagram per event-loop tick so a slow/broken diagram cannot
-      // freeze the UI or block other diagrams from rendering.
+      // block other diagrams. Oversized or unclosed diagrams are skipped because
+      // Mermaid layout runs synchronously on the browser's main thread.
       (async () => {
         for (const node of nodes) {
           await new Promise(resolve => setTimeout(resolve, 0));
+          if (!node.isConnected) continue;
+          const source = node.textContent;
+          const hasMarkdownHeading = /(^|\n)\s{0,3}#{1,6}\s/.test(source);
+          if (source.length > 8000 || source.split("\n").length > 100 || hasMarkdownHeading) {
+            showRenderFailure(node);
+            continue;
+          }
           try {
-            const result = mermaid.run({ nodes: [node] });
-            if (result && typeof result.then === "function") await result.catch(() => {});
-          } catch (e) { /* leave raw diagram text visible */ }
+            await mermaid.run({ nodes: [node] });
+          } catch (e) {
+            showRenderFailure(node);
+          }
         }
       })();
     }
@@ -682,6 +696,34 @@
     function renderMarkdown(src) {
       const fences = [];
       let text = String(src ?? "").replace(/\r\n/g, "\n");
+      // Recover an unterminated Mermaid block before parsing other Markdown.
+      // Without this, the next code block's opening fence can be mistaken for
+      // Mermaid's closing fence and shift the formatting of the rest of report.
+      const repairedLines = [];
+      let fenceOpen = false;
+      let mermaidOpen = false;
+      for (const line of text.split("\n")) {
+        const fence = line.match(/^\s{0,3}(`{3,})([^`]*)$/);
+        const startsSection = /^\s{0,3}#{1,6}\s/.test(line);
+        const startsAnotherCodeBlock = fence && fence[2].trim() !== "";
+        if (mermaidOpen && (startsSection || startsAnotherCodeBlock)) {
+          repairedLines.push("```");
+          fenceOpen = false;
+          mermaidOpen = false;
+        }
+        if (fence) {
+          if (!fenceOpen) {
+            fenceOpen = true;
+            mermaidOpen = /^`{3,}\s*mermaid\s*$/i.test(line.trim());
+          } else if (/^\s{0,3}`{3,}\s*$/.test(line)) {
+            fenceOpen = false;
+            mermaidOpen = false;
+          }
+        }
+        repairedLines.push(line);
+      }
+      if (mermaidOpen) repairedLines.push("```");
+      text = repairedLines.join("\n");
       text = text.replace(/```([\w+-]*)\n?([\s\S]*?)```/g, (_, lang, code) => {
         const content = code.replace(/\n$/, "");
         if (lang.toLowerCase() === "mermaid") {
