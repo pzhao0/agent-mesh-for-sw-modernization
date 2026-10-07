@@ -300,7 +300,7 @@ help-all:
 	@echo ""
 	@echo "Console application:"
 	@echo "  apply-console-src           Publish console job scripts"
-	@echo "  run-console-app             Run the console locally with KFP and MLflow port-forwards"
+	@echo "  run-console-app             Run the console locally with KFP route and MLflow port-forward"
 	@echo "  deploy-console-app          Deploy the console application"
 	@echo "  port-forward-console-app    Forward the deployed console to localhost:8080"
 	@echo "  test-ui-install             Install Playwright and Chromium for UI smoke tests"
@@ -1029,10 +1029,11 @@ run-console-app:
 	export MLFLOW_TRACKING_URI="https://127.0.0.1:18443"; \
 	export MLFLOW_TRACKING_INSECURE_TLS=true; \
 	export MLFLOW_TRACKING_TOKEN="$$(oc whoami --show-token)"; \
-	export KFP_HOST="https://127.0.0.1:18444"; \
-	oc port-forward --address 127.0.0.1 -n "$$KFP_NAMESPACE" svc/ds-pipeline-dspa 18444:8443 & KFP_FORWARD_PID=$$!; \
+	KFP_ROUTE_HOST="$$(oc get route ds-pipeline-dspa -n "$$KFP_NAMESPACE" -o jsonpath='{.spec.host}')"; \
+	: "$${KFP_ROUTE_HOST:?Could not find the ds-pipeline-dspa route in namespace $$KFP_NAMESPACE}"; \
+	export KFP_HOST="https://$$KFP_ROUTE_HOST"; \
 	oc port-forward --address 127.0.0.1 -n redhat-ods-applications svc/mlflow 18443:8443 & MLFLOW_FORWARD_PID=$$!; \
-	trap 'kill "$$KFP_FORWARD_PID" "$$MLFLOW_FORWARD_PID" 2>/dev/null || true' EXIT INT TERM; \
+	trap 'kill "$$MLFLOW_FORWARD_PID" 2>/dev/null || true' EXIT INT TERM; \
 	uv run --project ui --frozen uvicorn --app-dir ui main:app --host 127.0.0.1 --port 8080
 
 deploy-console-app:
