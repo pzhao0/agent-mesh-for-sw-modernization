@@ -82,6 +82,7 @@ ASSET_LOADER                        ?= mlflow
 INSTALL_PREBUILT_INDEX              ?= true
 CUSTOM_EVALUATOR                    ?= mlflow
 MLFLOW_TRACKING_URI                 ?= https://mlflow.redhat-ods-applications.svc.cluster.local:8443
+MLFLOW_WORKSPACE                    ?= $(KFP_NAMESPACE)
 OTEL_SERVICE_NAME                   ?= code-understanding
 OTEL_NAMESPACE                      ?= $(KFP_NAMESPACE)
 OTEL_EXPORTER_OTLP_ENDPOINT         ?= http://$(OTEL_SERVICE_NAME)-collector.$(OTEL_NAMESPACE).svc.cluster.local:4318
@@ -234,6 +235,7 @@ help:
 	@echo ""
 	@echo "User tasks:"
 	@echo "  run-pipelines               Submit the configured pipeline run"
+	@echo "                              Add ARGS='--single-repo --analysis-only' to use an existing index"
 	@echo "  run-adhoc-query             Run an ad hoc code-understanding query"
 	@echo ""
 	@echo "Administrator tasks:"
@@ -297,6 +299,7 @@ help-all:
 	@echo "  upload-prebuilt-index       Upload the prebuilt code index"
 	@echo "  run-adhoc-query             Run an ad hoc code-understanding query"
 	@echo "  run-pipelines               Submit the configured pipeline run"
+	@echo "                              Add --analysis-only to ARGS for a report from an existing index"
 	@echo ""
 	@echo "Console application:"
 	@echo "  apply-console-src           Publish console job scripts"
@@ -573,7 +576,7 @@ apply-secrets:
 	fi && \
 	oc patch secret code-understanding-env -n $(KFP_NAMESPACE) \
 		--type=merge \
-		-p '{"stringData":{"MLFLOW_NAMESPACE":"$(KFP_NAMESPACE)"}}' && \
+		-p '{"stringData":{"MLFLOW_NAMESPACE":"$(KFP_NAMESPACE)","MLFLOW_WORKSPACE":"$(MLFLOW_WORKSPACE)"}}' && \
 	if [ -n "$(GATEWAY_HOST)" ]; then \
 		echo "==> Patching MLFLOW_TRACKING_URI with external gateway URL..." && \
 		oc patch secret code-understanding-env -n $(KFP_NAMESPACE) \

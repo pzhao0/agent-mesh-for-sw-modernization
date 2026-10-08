@@ -71,7 +71,13 @@ def graphrag_evaluation_op(
     git_repo: str = "",
     git_branch: str = "",
     multi_repo: bool = False,
+    kfp_run_id: str = "",
 ):
+
+    import os
+
+    if kfp_run_id:
+        os.environ["KFP_RUN_ID"] = kfp_run_id
 
     import logging
 
@@ -141,13 +147,13 @@ def _run_pipeline(
     )
     task.set_env_variable("KFP_RUN_ID", dsl.PIPELINE_JOB_ID_PLACEHOLDER)
 
-    eval_task = graphrag_evaluation_op(
+    graphrag_evaluation_op(
         graphrag_dir=task.outputs["graphrag_dir"],
         git_repo=git_repo,
         git_branch=git_branch,
         multi_repo=multi_repo,
+        kfp_run_id=dsl.PIPELINE_JOB_ID_PLACEHOLDER,
     )
-    eval_task.set_env_variable("KFP_RUN_ID", dsl.PIPELINE_JOB_ID_PLACEHOLDER)
 
     return task.outputs["graphrag_dir"]
 

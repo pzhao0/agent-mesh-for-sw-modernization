@@ -18,7 +18,7 @@ models:
     retry_strategy: native
     max_retries: 10
     tokens_per_minute: null           
-    requests_per_minute: null   
+    requests_per_minute: 20   
     # encoding_name: o200k_harmony 
   default_embedding_model:
     type: embedding # or azure_openai_embedding
