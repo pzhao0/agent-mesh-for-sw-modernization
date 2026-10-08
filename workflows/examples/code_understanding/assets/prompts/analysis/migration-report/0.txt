@@ -13,7 +13,6 @@ Requirements:
 3. Add a directed edge A --> B only when repository A directly imports or depends on code from repository B. Omit edges entirely if no cross-repository dependencies exist.
 4. Keep the total node count ≤ 20.
 5. Output the Mermaid code block only — no explanation or preamble.
-6. Enclose the entire diagram in a fenced code block: open with ```mermaid on its own line and close with ``` on its own line. Include both the opening and closing fences.
 {% else %}
 Generate a Mermaid dependency diagram representing the key architectural components and their relationships in this codebase.
 
@@ -38,7 +37,6 @@ Requirements:
 5. Limit to the most architecturally significant components (maximum 20 nodes)
 6. Use short, readable node labels derived from the component names
 7. Output the Mermaid code block only — no explanation or preamble
-   Enclose the entire diagram in a fenced code block: open with ```mermaid on its own line and close with ``` on its own line. Include both the opening and closing fences.
    WRONG: Here is the dependency diagram:
           ```mermaid
           graph TD
