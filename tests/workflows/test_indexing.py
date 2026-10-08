@@ -69,12 +69,13 @@ def test_indexing_evaluation_failure_is_nonfatal(monkeypatch):
 
 
 def test_multi_repo_indexing_skips_evaluation(monkeypatch):
+    evaluations = []
     monkeypatch.setattr(indexing, "generate_graphrag_index", lambda **kwargs: None)
-
-    def unexpected_evaluation(**kwargs):
-        raise AssertionError("multi-repo indexing should skip evaluation")
-
-    monkeypatch.setattr(indexing, "evaluate_graphrag_index", unexpected_evaluation)
+    monkeypatch.setattr(
+        indexing,
+        "evaluate_graphrag_index",
+        lambda **kwargs: evaluations.append(kwargs),
+    )
 
     result = indexing.IndexingPipeline().run(
         codebase_path="targets",
@@ -85,3 +86,4 @@ def test_multi_repo_indexing_skips_evaluation(monkeypatch):
     )
 
     assert result["status"] == "success"
+    assert evaluations == []
