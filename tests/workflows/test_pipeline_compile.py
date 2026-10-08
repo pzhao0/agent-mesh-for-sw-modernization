@@ -71,21 +71,47 @@ def test_all_pipelines_compile(tmp_path):
         assert all("None" not in image for image in images)
         assert all(not image.endswith(":latest") for image in images)
 
-    single_repo = yaml.safe_load((tmp_path / "single_repo.yaml").read_text())
-    single_tasks = single_repo["root"]["dag"]["tasks"]
-    assert single_tasks["graphrag-indexing-pipeline"]["dependentTasks"] == [
-        "data-generation-pipeline"
-    ]
-    assert single_tasks["graphrag-analysis-pipeline"]["dependentTasks"] == [
-        "graphrag-indexing-pipeline"
-    ]
-
-    multi_repo = yaml.safe_load((tmp_path / "multi_repo.yaml").read_text())
-    multi_tasks = multi_repo["root"]["dag"]["tasks"]
-    assert "get-repo-list-op" in collect_task_names(multi_repo)
-    assert multi_tasks["graphrag-indexing-multi-repo-pipeline"]["dependentTasks"] == [
-        "data-generation-multi-repo-pipeline"
-    ]
-    assert multi_tasks["graphrag-analysis-multi-repo-pipeline"]["dependentTasks"] == [
-        "graphrag-indexing-multi-repo-pipeline"
-    ]
+    for mode in ("single", "multi"):
+        document = yaml.safe_load((tmp_path / f"{mode}_repo.yaml").read_text())
+        assert document["root"]["inputDefinitions"]["parameters"]["analysis_only"] == {
+            "defaultValue": False,
+            "isOptional": True,
+            "parameterType": "BOOLEAN",
+        }
+        root_task = next(iter(document["root"]["dag"]["tasks"].values()))
+        branches = document["components"][root_task["componentRef"]["name"]]["dag"]["tasks"]
+        condition = "inputs.parameter_values['pipelinechannel--analysis_only'] == true"
+        assert {task["triggerPolicy"]["condition"] for task in branches.values()} == {
+            condition,
+            f"!({condition})",
+        }
+        for branch in branches.values():
+            tasks = document["components"][branch["componentRef"]["name"]]["dag"]["tasks"]
+            analysis_tasks = [name for name in tasks if name.startswith("graphrag-analysis")]
+            assert len(analysis_tasks) == 1
+            report = tasks[analysis_tasks[0]]
+            if branch["triggerPolicy"]["condition"] == condition:
+                assert set(tasks) == {"load-existing-index-op", analysis_tasks[0]}
+                assert report["dependentTasks"] == ["load-existing-index-op"]
+                assert report["inputs"]["artifacts"]["graphrag_dir"] == {
+                    "taskOutputArtifact": {
+                        "outputArtifactKey": "graphrag_dir",
+                        "producerTask": "load-existing-index-op",
+                    }
+                }
+                lookup = tasks["load-existing-index-op"]["inputs"]["parameters"]
+                if mode == "single":
+                    assert lookup == {
+                        name: {"componentInputParameter": f"pipelinechannel--{name}"}
+                        for name in ("git_repo", "git_branch", "multi_repo")
+                    }
+                else:
+                    assert lookup["multi_repo"] == {"runtimeValue": {"constant": True}}
+            else:
+                generation = f"data-generation{'-multi-repo' if mode == 'multi' else ''}-pipeline"
+                indexing = f"graphrag-indexing{'-multi-repo' if mode == 'multi' else ''}-pipeline"
+                assert set(tasks) == {generation, indexing, analysis_tasks[0]}
+                assert tasks[indexing]["dependentTasks"] == [generation]
+                assert report["dependentTasks"] == [indexing]
+        if mode == "multi":
+            assert "get-repo-list-op" in collect_task_names(document)
