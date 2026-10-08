@@ -24,8 +24,8 @@ Analyze legacy code with GraphRAG on Red Hat OpenShift AI to uncover dependencie
     - [6.1 Analyze the sample repository](#61-analyze-the-sample-repository)
     - [6.2 Review the modernization results](#62-review-the-modernization-results)
     - [6.3 Ask questions about the code](#63-ask-questions-about-the-code)
-  - [7. Analyze your own repository](#7-analyze-your-own-repository)
-  - [8. Analyze multiple repositories](#8-analyze-multiple-repositories)
+  - [7. Analyze multiple repositories](#7-analyze-multiple-repositories)
+  - [8. Analyze your own repositories](#8-analyze-your-own-repositories)
   - [9. Explore the optional console](#9-explore-the-optional-console)
   - [10. What you've accomplished](#10-what-youve-accomplished)
   - [11. Delete](#11-delete)
@@ -298,28 +298,28 @@ a multi-repository index, which may not exist yet.
 
 **Expected outcome:** the terminal prints an answer about the selected repository.
 
-### 7. Analyze your own repository
+### 7. Analyze multiple repositories
 
-Set `GIT_REPO` and `GIT_BRANCH` in `.env` to your repository and branch. For a
-private repository, also provide credentials in `GIT_USERNAME` and `GIT_TOKEN`.
-Update the deployed secret, then submit another single-repository run:
+You can run the same pipeline on multiple repositories to build a combined
+index and compare dependencies that may affect migration order.
 
-```sh
-make apply-secrets
-make run-pipelines ARGS="--single-repo"
+For this example, use two related Java applications: [North Pole Southern Train](https://github.com/kfrankli/northpolesouthern-train) and [North Pole Southern Timetable](https://github.com/kfrankli/northpolesouthern-timetable). The checked-in [repo_list.json](workflows/examples/code_understanding/assets/repos/repo_list.json) contains other examples, so replace its contents with these two entries. Each entry has a `git_repo` URL and a `git_branch` value.
+
+Your [repo_list.json](workflows/examples/code_understanding/assets/repos/repo_list.json) should look like this:
+```json
+[
+    {
+        "git_repo": "https://github.com/kfrankli/northpolesouthern-train",
+        "git_branch": "main"
+    },
+    {
+        "git_repo": "https://github.com/kfrankli/northpolesouthern-timetable",
+        "git_branch": "main"
+    }
+]
 ```
 
-Wait for the new `single_repo_<timestamp>` run to succeed. Review its Markdown
-report and repeat the query command with your own repository URL and branch.
-The analysis reads source code; it does not modify the analyzed repository.
-
-### 8. Analyze multiple repositories
-
-Edit `[repo_list.json](workflows/examples/code_understanding/assets/repos/repo_list.json)`
-so it contains the repositories you want to analyze. Each array entry has a
-`git_repo` URL and a `git_branch` value. The checked-in file contains several
-public examples; remove entries you do not intend to process. Then upload the
-updated list and submit the multi-repository pipeline:
+Then upload the updated list and submit the multi-repository pipeline:
 
 ```sh
 make apply-secrets
@@ -333,7 +333,24 @@ across the combined index, omit the repository flags:
 wrappers/adhoc.sh "Which repositories share dependencies that affect migration order?"
 ```
 
+### 8. Analyze your own repositories
 
+For a single-repository analysis, set `GIT_REPO` and `GIT_BRANCH` in `.env` to
+your repository URL and branch. For a multi-repository analysis, edit
+[repo_list.json](workflows/examples/code_understanding/assets/repos/repo_list.json).
+If a repository is private, also set `GIT_USERNAME` and `GIT_TOKEN`.
+
+Apply the updated settings and submit the appropriate run:
+
+```sh
+make apply-secrets
+make run-pipelines ARGS="--single-repo" # use --multi-repo for a repository list
+```
+
+After the run succeeds, review its Markdown migration report. To query the
+resulting index, use the single-repository command from section 6.3 or the
+multi-repository command from section 7, depending on the run. The analysis
+reads source code and does not modify your repositories.
 
 ### 9. Explore the optional console
 
