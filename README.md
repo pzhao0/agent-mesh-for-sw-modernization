@@ -111,12 +111,12 @@ The architecture illustrates the path from raw source code through automated dat
 ### Minimum hardware requirements
 
 
-| Resource                   | Minimum or example                                                  | Used for                                          |
-| -------------------------- | ------------------------------------------------------------------- | ------------------------------------------------- |
-| CPU and memory             | 8+ vCPUs and 24+ GiB RAM                                            | Quickstart workloads, separate from model serving |
-| Persistent storage         | Default `StorageClass` able to provision a 50 GiB ReadWriteOnce PVC | S4-backed S3-compatible object storage             |
-| NVIDIA L40S GPU            | 1, if hosting the example `gpt-oss-120b` endpoint                   | GraphRAG chat model                               |
-| NVIDIA L40S GPU            | 1, if hosting the example `e5-mistral-7b-instruct` endpoint         | Embedding model                                   |
+| Resource           | Minimum or example                                                  | Used for                                          |
+| ------------------ | ------------------------------------------------------------------- | ------------------------------------------------- |
+| CPU and memory     | 8+ vCPUs and 24+ GiB RAM                                            | Quickstart workloads, separate from model serving |
+| Persistent storage | Default `StorageClass` able to provision a 50 GiB ReadWriteOnce PVC | S4-backed S3-compatible object storage            |
+| NVIDIA L40S GPU    | 1, if hosting the example `gpt-oss-120b` endpoint                   | GraphRAG chat model                               |
+| NVIDIA L40S GPU    | 1, if hosting the example `e5-mistral-7b-instruct` endpoint         | Embedding model                                   |
 
 
 If you use existing OpenAI-compatible model endpoints, their GPUs do not need
@@ -175,10 +175,10 @@ Provide reachable OpenAI-compatible endpoints for the chat and embedding
 roles. These model guides show example deployments:
 
 
-| Role                    | Example                            | Guide                                                                              |
-| ----------------------- | ---------------------------------- | ---------------------------------------------------------------------------------- |
-| GraphRAG chat           | `gpt-oss-120b`                     | [Deploy the chat model](resources/models/deploying-gpt-oss-120b.md)                |
-| GraphRAG embeddings     | `e5-mistral-7b-instruct`           | [Deploy the embedding model](resources/models/deploying-e5-mistral-7b-instruct.md) |
+| Role                | Example                  | Guide                                                                              |
+| ------------------- | ------------------------ | ---------------------------------------------------------------------------------- |
+| GraphRAG chat       | `gpt-oss-120b`           | [Deploy the chat model](resources/models/deploying-gpt-oss-120b.md)                |
+| GraphRAG embeddings | `e5-mistral-7b-instruct` | [Deploy the embedding model](resources/models/deploying-e5-mistral-7b-instruct.md) |
 
 
 You can have `make install` deploy the bundled embedding model instead of
@@ -254,13 +254,27 @@ OpenShift AI project's **Develop & train > Pipelines > Runs** view, wait for
 the run to succeed. This run skips data generation and indexing and uses the
 existing index to produce the report.
 
-Open the completed run in MLflow and inspect the analysis task's Markdown
-migration report.
+![Openshift AI analysis only pipeline](docs/images/analysis_only_pipeline.png)
+
+Once the pipeline is marked as completed, you can open the completed run in MLflow and inspect the analysis
+task's Markdown migration report.
+
+![Analysis only MLflow report](docs/images/analysis_only_mlflow_report.png)
+
+Look for the components and dependencies it
+identifies, then compare its suggested migration order with the sample source
+code. The report is also available through the optional Code Understanding
+console, where a completed run can be expanded and its analysis downloaded.
+
+The report gives you a starting point for discussion, not an automatic code
+change.
 
 **Expected outcome:** a Markdown migration report is available without
 rebuilding the prebuilt index.
 
 ### 7. Run your first code analysis
+
+
 
 #### 7.1 Analyze the sample repository
 
@@ -278,29 +292,21 @@ The command submits a run named `single_repo_<timestamp>` and prints its run
 ID. Submission is not pipeline completion. In your OpenShift AI project's
 Pipelines view, wait for that run to succeed before reviewing its report. You can find this by navigating to **Develop & train > Pipelines > Runs** in the Openshift AI console. 
 
-![Openshift AI Pipelines](docs/images/pipelines.png)
+![Openshift AI single repo pipeline](docs/images/single_repo_pipeline.png)
 
 This step can take a while. GraphRAG indexing is compute-intensive, and the
 run time depends on the repository size and the resources available to the
 pipeline.
 
-**Expected outcome:** the run reaches **Succeeded** after data generation,
+**Expected outcome:** the run reaches **Complete** after data generation,
 indexing, and analysis finish.
-
-
 
 #### 7.2 Review the modernization results
 
-![Openshift AI Pipelines](docs/images/mlflow_report.png)
+![Single-repo MLflow report](docs/images/single_repo_mlflow_report.png)
 
 Open the completed run in MLflow and inspect the analysis
-task's Markdown migration report. Look for the components and dependencies it
-identifies, then compare its suggested migration order with the sample source
-code. The report is also available through the optional Code Understanding
-console, where a completed run can be expanded and its analysis downloaded.
-
-The report gives you a starting point for discussion, not an automatic code
-change. If the run fails, inspect the failed pipeline task before moving to
+task's Markdown migration report. It should look similar to the one generated by the analysis-only pipeline. If the run fails, inspect the failed pipeline task before moving to
 the query step.
 
 **Expected outcome:** a Markdown migration report is available for the sample
@@ -340,12 +346,17 @@ make apply-secrets
 make run-pipelines ARGS="--multi-repo"
 ```
 
-After the run succeeds, review its combined migration report. To ask a question
-across the combined index, omit the repository flags:
+After the run succeeds, review its combined migration report in MLflow.
+
+![Multi-repo migration report](docs/images/multi_repo_mlflow_report.png)
+
+To ask a question across the combined index, omit the repository flags:
 
 ```sh
 wrappers/adhoc.sh "Which repositories share dependencies that affect migration order?"
 ```
+
+
 
 ### 9. Analyze your own repositories
 
@@ -367,6 +378,8 @@ multi-repository command from section 8, depending on the run. The analysis
 reads source code and does not modify your repositories.
 
 ### 10. Explore the optional console
+
+
 
 #### 10.1 Deploying the console
 
@@ -423,6 +436,8 @@ namespaces remain. Externally stored MLflow data, externally pushed container
 images, and the optional cluster-wide OpenShift console plugin also remain.
 
 ## Reference
+
+
 
 ### How the workflow works
 
@@ -511,3 +526,4 @@ image tags in `.env` before deploying those images. Set
 - **Product:** Red Hat OpenShift AI
 - **Use case:** Application modernization, code understanding, generative AI
 - **Contributor organization:** Red Hat
+
