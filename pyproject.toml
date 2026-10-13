@@ -34,6 +34,7 @@ target-version = ["py311"]
 [tool.isort]
 profile = "black"
 line_length = 99
+src_paths = ["ui"]
 
 [tool.uv]
 package = false
