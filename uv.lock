@@ -12,7 +12,7 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "agentmesh-code-understanding"
+name = "agent-mesh-dev"
 version = "0.1.0"
 source = { virtual = "." }
 

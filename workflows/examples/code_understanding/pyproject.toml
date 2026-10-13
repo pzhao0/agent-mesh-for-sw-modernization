@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentmesh-code-understanding"
+version = "0.1.0"
+
+[tool.setuptools.packages.find]
+namespaces = true
+exclude = ["scripts*", "notebooks*", "compiled_pipelines*", "*.egg-info*"]
+
+[tool.setuptools.package-data]
+"*" = [
+    "*.sh",
+    "*.json",
+    "*.jsonl",
+    "*.yaml",
+    "*.yaml.in",
+    "*.toml",
+    "*.txt",
+    "*.md",
+    "*.csv",
+    "*.tsv",
+    "*.xml",
+    "*.jinja",
+    "*.jinja2",
+    "*.j2",
+    "*.in",
+    "*.html",
+    "*.parquet",
+]
