@@ -651,11 +651,11 @@ verify-deploy: verify-secrets
 
 test-ui-unit:
 	@echo "==> Running UI tests..."
-	uv run --project ui --frozen pytest ui/tests
+	uv run --project . --group test --frozen pytest ui/tests
 
 test-workflows:
 	@echo "==> Running workflow pipeline tests..."
-	uv run --project workflows/examples/code_understanding --group test --frozen \
+	uv run --project . --group test --frozen \
 		pytest tests/workflows
 
 test-all: test-ui-unit test-workflows
@@ -685,18 +685,18 @@ test-ui:
 
 format:
 	@echo "==> Sorting Python imports with isort..."
-	uv run --project ui --frozen isort --settings-path ui/pyproject.toml --skip-glob '*/.venv/*' .
+	uv run --project . --group lint --frozen isort --skip-glob '*/.venv/*' .
 	@echo "==> Formatting Python code with Black..."
-	uv run --project ui --frozen black --config ui/pyproject.toml --extend-exclude '/\.venv/' .
+	uv run --project . --group lint --frozen black --extend-exclude '/\.venv/' .
 	@echo "==> Formatting completed successfully."
 
 lint:
 	@echo "==> Running Flake8..."
-	uv run --project ui --frozen flake8 --extend-exclude=.venv --max-line-length=99 --extend-ignore=E203,W503 .
+	uv run --project . --group lint --frozen flake8 --extend-exclude=.venv --max-line-length=99 --extend-ignore=E203,W503 .
 	@echo "==> Checking Python formatting with Black..."
-	uv run --project ui --frozen black --config ui/pyproject.toml --extend-exclude '/\.venv/' --check --diff .
+	uv run --project . --group lint --frozen black --extend-exclude '/\.venv/' --check --diff .
 	@echo "==> Checking Python import sorting with isort..."
-	uv run --project ui --frozen isort --settings-path ui/pyproject.toml --skip-glob '*/.venv/*' --check-only --diff .
+	uv run --project . --group lint --frozen isort --skip-glob '*/.venv/*' --check-only --diff .
 	@echo "==> Lint checks completed successfully."
 
 # ============================================================================
