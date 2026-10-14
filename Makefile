@@ -359,7 +359,7 @@ help-all:
 	@echo "  PIPELINE_GIT_BRANCH         Override the branch used by run-pipelines"
 	@echo "  PIPELINE_GIT_REPO_LIST      Override the repository-list file"
 	@echo "  ARGS                        Arguments passed to run-pipelines"
-	@echo "  KFP_NAMESPACE               Source/destination namespace for index transfer"
+	@echo "  KFP_NAMESPACE               Namespace used for this project"
 	@echo "  INDEX_GIT_SLUG              Export the latest completed single-repository index"
 	@echo "  INDEX_RUN_ID                Export a specific single or combined index run"
 	@echo "  INDEX_BUNDLE                Optional export output path; required import archive path"
