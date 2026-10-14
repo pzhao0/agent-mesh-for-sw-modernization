@@ -1,7 +1,6 @@
 """Transfer completed index runs using MLflow's native single-run export format.
 
-This module is independent of the console and existing prebuilt uploader. The
-caller supplies an MLflow client already configured for the selected workspace.
+The caller supplies an MLflow client already configured for the selected workspace.
 """
 
 from __future__ import annotations
@@ -252,6 +251,7 @@ class IndexTransfer:
             "start_time": info.start_time,
             "end_time": info.end_time,
             "artifact_path": path,
+            "uploaded": str(run.data.tags.get("uploaded", "")).lower() == "true",
         }
 
     def _search(self, experiment_id: str, extra_filter: str = ""):

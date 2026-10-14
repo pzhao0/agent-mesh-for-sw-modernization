@@ -28,7 +28,7 @@ def print_indexes(result: dict) -> None:
     if not indexes:
         print(f"No completed indexes found in {result['namespace']}.")
         return
-    headers = ("Repository / Index", "Type", "Latest", "Started (UTC)", "Run ID")
+    headers = ("Repository / Index", "Type", "Uploaded", "Latest", "Started (UTC)", "Run ID")
     rows = []
     for index in indexes:
         started = index["start_time"]
@@ -36,6 +36,7 @@ def print_indexes(result: dict) -> None:
             (
                 "Combined index" if index["multi_repo"] else index["git_slug"],
                 "Combined" if index["multi_repo"] else "Single",
+                "yes" if index["uploaded"] else "-",
                 "yes" if index["latest"] else "-",
                 (
                     datetime.fromtimestamp(started / 1000, timezone.utc).strftime(
@@ -119,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
             from urllib3.exceptions import InsecureRequestWarning
 
             warnings.filterwarnings("ignore", category=InsecureRequestWarning)
-            uri = os.getenv("MLFLOW_TRACKING_URI", "")
+            uri = os.getenv("LOCAL_MLFLOW_TRACKING_URI") or os.getenv("MLFLOW_TRACKING_URI", "")
             parsed = urlparse(uri)
             if parsed.scheme not in {"http", "https"} or not parsed.hostname:
                 raise ValueError("MLFLOW_TRACKING_URI must be a self-hosted HTTP(S) endpoint")

@@ -92,22 +92,18 @@ MLFLOW_TRACKING_AUTH                ?= kubernetes-namespaced
 MLFLOW_TRACE_ENABLE_OTLP_DUAL_EXPORT ?= true
 OTEL_SEMCONV_STABILITY_OPT_IN       ?= genai
 
-# Capture the configured URI before local targets override their exported URI.
+# Local targets always use the external MLflow gateway.
 # Keep discovery lazy and unexported so installation and help do not query Routes.
-LOCAL_MLFLOW_SOURCE_URI := $(MLFLOW_TRACKING_URI)
-LOCAL_MLFLOW_TRACKING_HOST = $(firstword $(subst :, ,$(firstword $(subst /, ,$(patsubst https://%,%,$(patsubst http://%,%,$(LOCAL_MLFLOW_SOURCE_URI)))))))
 LOCAL_MLFLOW_GATEWAY_HOST = $(shell oc get route data-science-gateway -n openshift-ingress --request-timeout=10s -o jsonpath='{.spec.host}' 2>/dev/null)
-local_mlflow_gateway_uri = $(if $(strip $(1)),https://$(strip $(1))/mlflow,$(error Cannot discover the MLflow gateway Route. Log in with oc login or set MLFLOW_TRACKING_URI to a reachable endpoint))
-LOCAL_MLFLOW_TRACKING_URI = $(if $(filter %.svc %.svc.cluster.local,$(LOCAL_MLFLOW_TRACKING_HOST)),$(call local_mlflow_gateway_uri,$(LOCAL_MLFLOW_GATEWAY_HOST)),$(LOCAL_MLFLOW_SOURCE_URI))
-unexport LOCAL_MLFLOW_SOURCE_URI LOCAL_MLFLOW_TRACKING_HOST LOCAL_MLFLOW_GATEWAY_HOST LOCAL_MLFLOW_TRACKING_URI local_mlflow_gateway_uri
+local_mlflow_gateway_uri = $(if $(strip $(1)),https://$(strip $(1))/mlflow,$(error Cannot discover the MLflow gateway Route. Log in with oc login and ensure the data-science-gateway Route exists in openshift-ingress))
+LOCAL_MLFLOW_TRACKING_URI = $(call local_mlflow_gateway_uri,$(LOCAL_MLFLOW_GATEWAY_HOST))
+unexport LOCAL_MLFLOW_GATEWAY_HOST LOCAL_MLFLOW_TRACKING_URI local_mlflow_gateway_uri
 
-# Local native MLflow index transfer (independent of the installation uploader).
+# Local MLflow index transfer
 INDEX_GIT_SLUG                     ?=
 INDEX_RUN_ID                       ?=
 INDEX_BUNDLE                       ?=
 INDEX_FORCE                        ?= false
-INDEX_PYTHON                       ?= 3.12
-INDEX_REQUIREMENTS                 ?= workflows/examples/code_understanding/scripts/requirements-index-transfer.txt
 
 SECRET_ENV_VARS := \
 	AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_S3_BUCKET \
@@ -362,7 +358,6 @@ help-all:
 	@echo "  PIPELINE_GIT_REPO_LIST      Override the repository-list file"
 	@echo "  ARGS                        Arguments passed to run-pipelines"
 	@echo "  KFP_NAMESPACE               Source/destination namespace for index transfer"
-	@echo "  MLFLOW_TRACKING_URI         Reachable MLflow endpoint for index transfer"
 	@echo "  INDEX_GIT_SLUG              Export the latest completed single-repository index"
 	@echo "  INDEX_RUN_ID                Export a specific single or combined index run"
 	@echo "  INDEX_BUNDLE                Optional export output path; required import archive path"
@@ -714,20 +709,15 @@ test-ui:
 	$(E2E_UI_TEST_CMD)
 
 test-index-transfer:
-	@uv run --no-project --python "$$INDEX_PYTHON" --with-requirements "$$INDEX_REQUIREMENTS" --with pytest -- python -m pytest workflows/examples/code_understanding/tests/test_index_transfer.py -q
-
-# CLI options are read from exported Make variables, preserving spaces in paths
-# and avoiding shell interpolation of repository slugs or run IDs.
-list-indexes export-indexes import-indexes run-console-app: override MLFLOW_TRACKING_URI = $(LOCAL_MLFLOW_TRACKING_URI)
-
+	@uv run --project . --group test --frozen pytest tests/unit/index
 list-indexes:
-	@uv run --no-project --python "$$INDEX_PYTHON" --with-requirements "$$INDEX_REQUIREMENTS" -- python workflows/examples/code_understanding/scripts/transfer_index.py list
+	@LOCAL_MLFLOW_TRACKING_URI="$(LOCAL_MLFLOW_TRACKING_URI)" uv run --project . --frozen python workflows/examples/code_understanding/scripts/transfer_index.py list
 
 export-indexes:
-	@uv run --quiet --no-project --python "$$INDEX_PYTHON" --with-requirements "$$INDEX_REQUIREMENTS" -- python workflows/examples/code_understanding/scripts/transfer_index.py export
+	@LOCAL_MLFLOW_TRACKING_URI="$(LOCAL_MLFLOW_TRACKING_URI)" uv run --quiet --project . --frozen python workflows/examples/code_understanding/scripts/transfer_index.py export
 
 import-indexes:
-	@uv run --no-project --python "$$INDEX_PYTHON" --with-requirements "$$INDEX_REQUIREMENTS" -- python workflows/examples/code_understanding/scripts/transfer_index.py import
+	@LOCAL_MLFLOW_TRACKING_URI="$(LOCAL_MLFLOW_TRACKING_URI)" uv run --project . --frozen python workflows/examples/code_understanding/scripts/transfer_index.py import
 
 # ============================================================================
 # Utility commands
@@ -1112,6 +1102,7 @@ run-console-app:
 	export AGENTMESH_REPO_URL="$(GIT_REPO_URL)"; \
 	export AGENTMESH_REPO_REF="$(GIT_REPO_BRANCH)"; \
 	export MLFLOW_WORKSPACE="$$KFP_NAMESPACE"; \
+	export MLFLOW_TRACKING_URI="$(LOCAL_MLFLOW_TRACKING_URI)"; \
 	if [ -z "$${MLFLOW_TRACKING_TOKEN:-}" ]; then export MLFLOW_TRACKING_TOKEN="$$(oc whoami --show-token)"; fi; \
 	KFP_ROUTE_HOST="$$(oc get route ds-pipeline-dspa -n "$$KFP_NAMESPACE" -o jsonpath='{.spec.host}')"; \
 	: "$${KFP_ROUTE_HOST:?Could not find the ds-pipeline-dspa route in namespace $$KFP_NAMESPACE}"; \
