@@ -446,7 +446,7 @@ Indexes in agent-mesh-demo (1)
 
 Repository / Index                        Type      Uploaded  Latest  Started (UTC)        Run ID
 ----------------------------------------  --------  --------  ------  -------------------  --------------------------------
-agapebondservant-tic-tac-toe-sample-main      Single    yes       yes     2026-10-12 19:39:52  21ffb6906aff4646b76dc430f2a2a43b
+agapebondservant-tic-tac-toe-sample-main  Single    yes       yes     2026-10-12 19:39:52  21ffb6906aff4646b76dc430f2a2a43b
 ```
 
 Export the selected index to a local archive. Replace `<run-id>` with the ID
