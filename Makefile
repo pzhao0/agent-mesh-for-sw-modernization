@@ -711,7 +711,8 @@ test-ui:
 	$(E2E_UI_TEST_CMD)
 
 test-index-transfer:
-	@uv run --project . --group test --frozen pytest tests/unit/index
+	@echo "==> Running index transfer tests..."
+	uv run --project . --group test --frozen pytest tests/unit/index
 
 # ============================================================================
 # Utility commands
