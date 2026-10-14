@@ -30,7 +30,8 @@ Analyze legacy code with GraphRAG on Red Hat OpenShift AI to uncover dependencie
   - [10. Explore the optional console](#10-explore-the-optional-console)
   - [11. What you've accomplished](#11-what-youve-accomplished)
   - [12. Exporting and Importing your indexes (Optional)](#12-exporting-and-importing-your-indexes-optional)
-  - [13. Delete](#13-delete)
+  - [13. Explore traces with MLflow (Optional)](#13-explore-traces-with-mlflow-optional)
+  - [14. Delete](#14-delete)
 - [Reference](#reference)
   - [How the workflow works](#how-the-workflow-works)
   - [Configuration variables](#configuration-variables)
@@ -486,7 +487,29 @@ make import-indexes KFP_NAMESPACE=destination-project \
 
 
 
-### 13. Delete
+### 13. Explore traces with MLflow (Optional)
+
+The application uses MLflow tracing to record LLM requests. These traces are
+logged to the `AIP-default` experiment and are available in MLflow without
+deploying OpenTelemetry or Tempo. In MLflow, select your project, choose
+**Experiments > AIP-default**, then select **Traces** in the left panel.
+
+![MLflow traces view](docs/images/traces.png)
+
+To also send traces to Tempo, install the Red Hat build of the OpenTelemetry
+Operator and Tempo Operator listed under
+[Minimum software requirements](#minimum-software-requirements), then enable
+the optional OpenTelemetry and Tempo deployment:
+
+```sh
+make install DEPLOY_OTEL=true
+```
+
+This flag deploys an OpenTelemetry Collector and Tempo and enables dual export,
+so traces are sent to both MLflow and Tempo. The Tempo copy can be queried
+using your cluster's tracing tools.
+
+### 14. Delete
 
 When you have finished, run:
 
