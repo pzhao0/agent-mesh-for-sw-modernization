@@ -287,8 +287,12 @@ help-all:
 	@echo "  deploy-otel                 Deploy OpenTelemetry and Tempo resources when enabled"
 	@echo ""
 	@echo "Testing:"
-	@echo "  test-all                    Run all test suites"
-	@echo "  test-index-transfer         Test native index transfer with a local MLflow server"
+	@echo "  test-all                    Run UI unit, workflow, and index transfer tests"
+	@echo "  test-ui-unit                Run console API and unit tests"
+	@echo "  test-workflows              Run workflow pipeline tests"
+	@echo "  test-index-transfer         Run index transfer tests"
+	@echo "  test-ui-install             Install Playwright and Chromium for UI smoke tests"
+	@echo "  test-ui                     Check the deployed console UI with Playwright"
 	@echo "  helm-dependencies           Download Helm chart dependencies"
 	@echo "  helm-lint                   Lint the deployment chart"
 	@echo "  helm-template               Render the deployment chart"
@@ -332,8 +336,6 @@ help-all:
 	@echo "  run-console-app             Run the console locally using KFP and MLflow routes"
 	@echo "  deploy-console-app          Deploy the console application"
 	@echo "  port-forward-console-app    Forward the deployed console to localhost:8080"
-	@echo "  test-ui-install             Install Playwright and Chromium for UI smoke tests"
-	@echo "  test-ui                     Check the deployed console UI with Playwright"
 	@echo ""
 	@echo "OpenShift console plugin:"
 	@echo "  apply-plugin-src            Publish console-plugin job scripts"
@@ -710,14 +712,6 @@ test-ui:
 
 test-index-transfer:
 	@uv run --project . --group test --frozen pytest tests/unit/index
-list-indexes:
-	@LOCAL_MLFLOW_TRACKING_URI="$(LOCAL_MLFLOW_TRACKING_URI)" uv run --project . --frozen python workflows/examples/code_understanding/scripts/transfer_index.py list
-
-export-indexes:
-	@LOCAL_MLFLOW_TRACKING_URI="$(LOCAL_MLFLOW_TRACKING_URI)" uv run --quiet --project . --frozen python workflows/examples/code_understanding/scripts/transfer_index.py export
-
-import-indexes:
-	@LOCAL_MLFLOW_TRACKING_URI="$(LOCAL_MLFLOW_TRACKING_URI)" uv run --project . --frozen python workflows/examples/code_understanding/scripts/transfer_index.py import
 
 # ============================================================================
 # Utility commands
@@ -1044,6 +1038,16 @@ run-pipelines:
 	oc wait job/run-pipelines -n "$(KFP_NAMESPACE)" \
 		--for=condition=complete --timeout="$(WAIT_TIMEOUT)" || JOB_EXIT=$$?; \
 	[ "$$JOB_EXIT" -eq 0 ] || { echo "Error: pipeline submission failed or timed out." >&2; exit "$$JOB_EXIT"; }
+
+list-indexes:
+	@LOCAL_MLFLOW_TRACKING_URI="$(LOCAL_MLFLOW_TRACKING_URI)" uv run --project . --frozen python workflows/examples/code_understanding/scripts/transfer_index.py list
+
+export-indexes:
+	@LOCAL_MLFLOW_TRACKING_URI="$(LOCAL_MLFLOW_TRACKING_URI)" uv run --quiet --project . --frozen python workflows/examples/code_understanding/scripts/transfer_index.py export
+
+import-indexes:
+	@LOCAL_MLFLOW_TRACKING_URI="$(LOCAL_MLFLOW_TRACKING_URI)" uv run --project . --frozen python workflows/examples/code_understanding/scripts/transfer_index.py import
+
 
 # ============================================================================
 # Observability
