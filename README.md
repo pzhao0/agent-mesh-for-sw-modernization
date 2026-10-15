@@ -223,7 +223,7 @@ embedding model during installation, use this command instead:
 make install DEPLOY_EMBEDDING_MODEL=true
 ```
 
-OpenTelemetry and Tempo are optional and disabled by default. To deploy them as part of installation, run `make install DEPLOY_OTEL=true`.
+
 
 ### 5. Ask a question using the prebuilt index
 
@@ -493,7 +493,6 @@ The application uses MLflow tracing to record LLM requests. These traces are
 logged to the `AIP-default` experiment and are available in MLflow without
 deploying OpenTelemetry or Tempo. In MLflow, select your project, choose
 **Experiments > AIP-default**, then select **Traces** in the left panel.
-
 ![MLflow traces view](docs/images/traces.png)
 
 To also send traces to Tempo, install the Red Hat build of the OpenTelemetry
@@ -566,7 +565,8 @@ values.
 | `ASSET_LOADER`, `INSTALL_PREBUILT_INDEX`, `CUSTOM_EVALUATOR`                                                                           | Asset backend, sample index upload, and evaluator                |
 | `LOGLEVEL`                                                                                                                             | Application logging level                                        |
 | `OTEL_SERVICE_NAME`, `OTEL_NAMESPACE`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER`                                                  | Optional tracing resources and exporter                          |
-| `MLFLOW_TRACE_ENABLE_OTLP_DUAL_EXPORT`, `OTEL_SEMCONV_STABILITY_OPT_IN`                                                                | Optional trace export and semantic-convention settings           |
+| `MLFLOW_TRACE_ENABLE_OTLP_DUAL_EXPORT`                                                                                                 | Dual-export MLflow traces to OTel (defaults to `DEPLOY_OTEL`)    |
+| `OTEL_SEMCONV_STABILITY_OPT_IN`                                                                                                        | OpenTelemetry semantic-convention setting                        |
 
 
 Useful Make overrides include `DEPLOY_EMBEDDING_MODEL`, `DEPLOY_OTEL`,
