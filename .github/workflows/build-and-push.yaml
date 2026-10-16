@@ -1,0 +1,46 @@
+name: Build and push images (main)
+
+# Every upstream main push builds that exact commit with the Makefile BASE_VERSION.
+# Ordinary merges republish the current tag; wait for publishing before deploying.
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+# Serialize publication to avoid simultaneous pushes to the same version tag.
+concurrency:
+  group: publish-main-images-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Read image version
+    if: github.repository == 'rh-ai-quickstart/agent-mesh-for-sw-modernization'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout merged commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Read BASE_VERSION from Makefile
+        id: version
+        run: |
+          VERSION=$(python3 .github/scripts/image_version.py)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: Build and push main images
+    needs: version
+    uses: ./.github/workflows/build-and-push-manual.yaml
+    with:
+      target_branch: ${{ github.sha }}
+      version: ${{ needs.version.outputs.version }}
+    secrets:
+      QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+      QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
