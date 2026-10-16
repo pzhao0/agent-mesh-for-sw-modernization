@@ -41,6 +41,7 @@ def image_version(makefile, requested=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--makefile", type=Path, default=Path("Makefile"))
     parser.add_argument(
         "--bump",
         nargs="?",
@@ -49,7 +50,7 @@ def main():
     )
     args = parser.parse_args()
     try:
-        print(image_version(Path("Makefile"), args.bump))
+        print(image_version(args.makefile, args.bump))
     except (OSError, ValueError) as error:
         parser.exit(1, f"{error}\n")
 

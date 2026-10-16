@@ -31,6 +31,16 @@ def test_read_uses_committed_default_without_loading_env(tmp_path):
     assert makefile.read_text() == MAKEFILE
 
 
+def test_reads_previous_makefile_without_changing_current_default(tmp_path):
+    (tmp_path / "Makefile").write_text(MAKEFILE)
+    previous = tmp_path / "Makefile.before"
+    previous.write_text(MAKEFILE.replace("v0.1.6", "v0.1.5"))
+    result = run_version(tmp_path, "--makefile", str(previous))
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "v0.1.5"
+    assert (tmp_path / "Makefile").read_text() == MAKEFILE
+
+
 @pytest.mark.parametrize("args", [("--bump",), ("--bump", ""), ("--bump", "v0.1.7")])
 def test_patch_bump_changes_only_base_version(tmp_path, args):
     makefile = tmp_path / "Makefile"
