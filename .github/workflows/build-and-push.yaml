@@ -1,6 +1,6 @@
 name: Build and push images (main)
 
-# Publish upstream main only when BASE_VERSION differs before and after the push.
+# Publish main in non-fork repositories only when BASE_VERSION changes in the push.
 # Ordinary merges skip publishing; manual builds remain available for retries.
 on:
   push:
@@ -13,7 +13,7 @@ permissions:
 jobs:
   version:
     name: Check image version change
-    if: github.repository == 'rh-ai-quickstart/agent-mesh-for-sw-modernization'
+    if: github.event.repository.fork == false
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}

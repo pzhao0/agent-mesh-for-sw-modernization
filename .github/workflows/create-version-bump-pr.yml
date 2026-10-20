@@ -1,7 +1,7 @@
 name: Create Version Bump PR
 
 # Run on main with vMAJOR.MINOR.PATCH, or leave version empty for a patch bump.
-# Reuses one PR changing only BASE_VERSION; merge it to build/push the new version.
+# Reuses one PR per version changing only BASE_VERSION; merge it to build/push images.
 # Enable Actions > General > Allow GitHub Actions to create and approve pull requests.
 # Uses GITHUB_TOKEN; generated PR checks may need "Approve workflows to run".
 on:
@@ -43,19 +43,43 @@ jobs:
 
       - name: Create or update version bump PR
         id: pr
-        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
-        with:
-          base: main
-          branch: automation/bump-base-version
-          add-paths: Makefile
-          commit-message: "chore: bump BASE_VERSION to ${{ steps.version.outputs.version }}"
-          title: "chore: bump BASE_VERSION to ${{ steps.version.outputs.version }}"
-          body: |
-            Update the default image version from `${{ steps.version.outputs.previous }}` to `${{ steps.version.outputs.version }}`.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PREVIOUS_VERSION: ${{ steps.version.outputs.previous }}
+          NEW_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          BRANCH_NAME="chore/bump-base-version-to-$NEW_VERSION"
+          TITLE="chore: bump BASE_VERSION to $NEW_VERSION"
+          # Replace only the automation branch, and fail if it changes after this read.
+          EXPECTED_SHA=$(git ls-remote --heads origin "refs/heads/$BRANCH_NAME" | cut -f1)
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -b "$BRANCH_NAME"
+          git add Makefile
+          git commit -m "$TITLE"
+          git push --force-with-lease="refs/heads/$BRANCH_NAME:$EXPECTED_SHA" \
+            origin "HEAD:refs/heads/$BRANCH_NAME"
 
-            Merging this PR triggers image builds and pushes to Quay.io using the new `BASE_VERSION`.
+          BODY_FILE="$RUNNER_TEMP/version-bump-pr-body.txt"
+          printf '%s\n' \
+            "Update the default image version from $PREVIOUS_VERSION to $NEW_VERSION." \
+            '' \
+            'Merging this PR triggers image builds and pushes to Quay.io using the new `BASE_VERSION`.' \
+            '' \
+            "Requested by @$GITHUB_ACTOR in [this workflow run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)." \
+            > "$BODY_FILE"
 
-            Requested by @${{ github.actor }} in [this workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+          PR_NUMBER=$(gh pr list --base main --head "$BRANCH_NAME" --state open \
+            --json number --jq '.[0].number // empty')
+          if [[ -n "$PR_NUMBER" ]]; then
+            gh pr edit "$PR_NUMBER" --title "$TITLE" --body-file "$BODY_FILE"
+            PR_URL=$(gh pr view "$PR_NUMBER" --json url --jq '.url')
+          else
+            PR_URL=$(gh pr create --base main --head "$BRANCH_NAME" \
+              --title "$TITLE" --body-file "$BODY_FILE")
+          fi
+          echo "pull-request-url=$PR_URL" >> "$GITHUB_OUTPUT"
 
       - name: Summarize version bump
         env:
