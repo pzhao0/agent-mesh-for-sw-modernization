@@ -200,7 +200,7 @@ HELM_UPGRADE_ARGS = agent-mesh-for-sw resources/helm \
 	test-ui \
 	test-api \
 	test-workflows \
-	test-image-version \
+	test-release \
 	test-all \
 	format \
 	lint \
@@ -293,7 +293,7 @@ help-all:
 	@echo "  test-api                    Run API route and service tests"
 	@echo "  test-ui-unit                Run console API and unit tests"
 	@echo "  test-workflows              Run workflow pipeline tests"
-	@echo "  test-image-version          Check image version reading and bumps"
+	@echo "  test-release                Check release version reading and bumps"
 	@echo "  test-index-transfer         Run index transfer tests"
 	@echo "  test-ui-install             Install Playwright and Chromium for UI smoke tests"
 	@echo "  test-ui                     Check the deployed console UI with Playwright"
@@ -696,11 +696,11 @@ test-workflows:
 	uv run --project . --group test --frozen \
 		pytest tests/unit/workflows
 
-test-image-version:
-	@echo "==> Running image version tests..."
+test-release:
+	@echo "==> Running release tests..."
 	uv run --project . --group test --frozen pytest tests/unit/release
 
-test-all: test-api test-ui-unit test-workflows test-index-transfer test-image-version
+test-all: test-api test-ui-unit test-workflows test-index-transfer test-release
 
 test-ui-install:
 	@echo "==> Installing Playwright and Chromium for UI smoke tests..."
