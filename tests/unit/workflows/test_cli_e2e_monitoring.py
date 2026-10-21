@@ -214,7 +214,10 @@ def test_query_check_rejects_missing_answers_and_query_errors(output):
 def test_combined_query_uses_wrapper_without_repository_flags():
     helpers = runpy.run_path(str(CLI_TESTS / "test_cli_pipelines.py"))
     run_cli = Mock(
-        return_value="\r⠋ Querying...\r\x1b[K##################ADHOC RESULTS##################\nTrain and timetable share dependencies.\n"
+        return_value=(
+            "\r⠋ Querying...\r\x1b[K##################ADHOC RESULTS##################\n"
+            "Train and timetable share dependencies.\n"
+        )
     )
 
     helpers["test_multi_repo_combined_index_query_returns_answer"](run_cli)
