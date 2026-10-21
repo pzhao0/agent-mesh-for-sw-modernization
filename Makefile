@@ -250,8 +250,7 @@ HELM_UPGRADE_ARGS = agent-mesh-for-sw resources/helm \
 	apply-plugin-src \
 	deploy-console-plugin \
 	enable-console-plugin \
-	test-ui-install \
-	test-ui-e2e
+	test-ui-install
 
 help:
 	@echo "Agent Mesh for Software Modernization"
