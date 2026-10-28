@@ -45,6 +45,6 @@ tolerations:
 cache:
   storageClassName: gp3-csi
   accessMode: ReadWriteOnce
-  size: 100Gi
+  size: 50Gi
 
 shmSize: 8Gi

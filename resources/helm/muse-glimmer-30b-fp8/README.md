@@ -16,7 +16,7 @@ available L40S node. Defaults in [values.yaml](values.yaml):
 | Host memory request / limit    | 32 GiB / 48 GiB                   |
 | CPU request / limit            | 4 / 8                             |
 | Node toleration                | `g6e-gpu=true:NoSchedule`         |
-| Cache                          | 100 GiB, ReadWriteOnce, `gp3-csi` |
+| Cache                          | 50 GiB, ReadWriteOnce, `gp3-csi` |
 
 
 Override the toleration and storage class to match your cluster. Set
