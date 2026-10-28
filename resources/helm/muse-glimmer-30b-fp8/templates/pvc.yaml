@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: muse-glimmer-30b-fp8-cache
+  namespace: {{ .Release.Namespace }}
+spec:
+  accessModes:
+    - {{ .Values.cache.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.cache.size }}
+  storageClassName: {{ .Values.cache.storageClassName }}

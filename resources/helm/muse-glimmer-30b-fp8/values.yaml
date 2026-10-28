@@ -1,0 +1,50 @@
+# Fixed replica count prevents scale-to-zero/model reloads.
+replicaCount: 1
+
+serving:
+  # OpenShift AI uses RawDeployment; newer upstream KServe calls this Standard.
+  deploymentMode: RawDeployment
+  annotations: {}
+
+# The model card specifies this image for Muse architecture/parser support.
+image:
+  repository: vllm/vllm-openai
+  tag: muse-glimmer
+  pullPolicy: IfNotPresent
+
+model:
+  name: RedHatAI/Muse-Glimmer-30B-FP8-block
+  maxModelLen: 16384
+  gpuMemoryUtilization: "0.90"
+  tensorParallelSize: 1
+  extraArgs: []
+
+huggingFace:
+  existingSecret: ""
+  tokenKey: HF_TOKEN
+
+resources:
+  requests:
+    cpu: "4"
+    memory: 32Gi
+    nvidia.com/gpu: "1"
+  limits:
+    cpu: "8"
+    memory: 48Gi
+    nvidia.com/gpu: "1"
+
+# Toleration permits placement; use nodeSelector to constrain the GPU pool.
+nodeSelector: {}
+
+tolerations:
+  - key: g6e-gpu
+    operator: Equal
+    value: "true"
+    effect: NoSchedule
+
+cache:
+  storageClassName: gp3-csi
+  accessMode: ReadWriteOnce
+  size: 100Gi
+
+shmSize: 8Gi

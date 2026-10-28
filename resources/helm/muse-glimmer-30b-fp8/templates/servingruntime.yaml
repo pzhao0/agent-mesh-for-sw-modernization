@@ -1,0 +1,95 @@
+apiVersion: serving.kserve.io/v1alpha1
+kind: ServingRuntime
+metadata:
+  name: muse-glimmer-30b-fp8
+  namespace: {{ .Release.Namespace }}
+  labels:
+    opendatahub.io/dashboard: "true"
+  annotations:
+    opendatahub.io/apiProtocol: REST
+    opendatahub.io/recommended-accelerators: '["nvidia.com/gpu"]'
+    openshift.io/display-name: Muse Glimmer 30B FP8 (vLLM)
+spec:
+  multiModel: false
+  supportedModelFormats:
+    - name: pytorch
+      autoSelect: false
+  # vLLM downloads the Hugging Face checkpoint directly into the cache PVC.
+  storageHelper:
+    disabled: true
+  containers:
+    - name: kserve-container
+      image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+      imagePullPolicy: {{ .Values.image.pullPolicy }}
+      command:
+        - python3
+        - -m
+        - vllm.entrypoints.openai.api_server
+      args:
+        - --host=0.0.0.0
+        - --port=8000
+        - --model={{ .Values.model.name }}
+        - --served-model-name={{ .Values.model.name }}
+        - --tensor-parallel-size={{ .Values.model.tensorParallelSize }}
+        - --generation-config=auto
+        - --enable-auto-tool-choice
+        - --tool-call-parser=muse_glimmer
+        - --reasoning-parser=muse_glimmer
+        - --max-model-len={{ .Values.model.maxModelLen }}
+        - --gpu-memory-utilization={{ .Values.model.gpuMemoryUtilization }}
+        {{- range .Values.model.extraArgs }}
+        - {{ . | quote }}
+        {{- end }}
+      ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+      env:
+        {{- if .Values.huggingFace.existingSecret }}
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.huggingFace.existingSecret }}
+              key: {{ .Values.huggingFace.tokenKey }}
+        {{- end }}
+        - name: HOME
+          value: /tmp
+        - name: HF_HOME
+          value: /model-cache
+        - name: XDG_CACHE_HOME
+          value: /model-cache/xdg
+        - name: VLLM_CACHE_ROOT
+          value: /model-cache/vllm
+        - name: TRITON_CACHE_DIR
+          value: /model-cache/triton
+        - name: NUMBA_CACHE_DIR
+          value: /tmp/numba
+        - name: TRANSFORMERS_CACHE
+          value: /model-cache/transformers
+      # KServe agent probe rewriting requires numeric ports.
+      livenessProbe:
+        httpGet:
+          path: /health
+          port: 8000
+        timeoutSeconds: 10
+        periodSeconds: 30
+        failureThreshold: 6
+      readinessProbe:
+        httpGet:
+          path: /health
+          port: 8000
+        timeoutSeconds: 5
+        periodSeconds: 10
+        failureThreshold: 30
+      startupProbe:
+        httpGet:
+          path: /health
+          port: 8000
+        timeoutSeconds: 10
+        periodSeconds: 20
+        failureThreshold: 180
+      volumeMounts:
+        - name: model-cache
+          mountPath: /model-cache
+        - name: shm
+          mountPath: /dev/shm

@@ -192,6 +192,9 @@ roles. These model guides show example deployments:
 | GraphRAG embeddings | `e5-mistral-7b-instruct` | [Deploy the embedding model](resources/models/deploying-e5-mistral-7b-instruct.md) |
 
 
+For a single-L40S chat endpoint, use the [Muse Glimmer 30B FP8 Helm chart](resources/helm/muse-glimmer-30b-fp8/README.md),
+which deploys a custom KServe ServingRuntime and InferenceService.
+
 You can have `make install` deploy the bundled embedding model instead of
 supplying an external embedding endpoint.
 
