@@ -1,6 +1,0 @@
-apiVersion: v2
-name: muse-glimmer-30b-fp8
-description: KServe InferenceService with an OpenAI-compatible vLLM server for RedHatAI Muse Glimmer 30B FP8
-type: application
-version: 0.1.0
-appVersion: "muse-glimmer"
