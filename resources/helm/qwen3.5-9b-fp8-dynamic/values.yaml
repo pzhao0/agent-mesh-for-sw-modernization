@@ -1,0 +1,53 @@
+# Fixed replica count prevents scale-to-zero/model reloads.
+replicaCount: 1
+
+serving:
+  deploymentMode: RawDeployment
+  annotations: {}
+
+# Pinned upstream vLLM with Qwen3.5 and compressed-tensors support.
+image:
+  repository: vllm/vllm-openai
+  tag: v0.27.1
+  pullPolicy: IfNotPresent
+
+model:
+  # RedHatAI compressed-tensors FP8 dynamic checkpoint; vLLM selects the GPU kernel.
+  name: RedHatAI/Qwen3.5-9B-FP8-dynamic
+  revision: 790f0576d2d77dd5322aa0603a470bd9e3a3d1f6
+  maxModelLen: 16384
+  gpuMemoryUtilization: "0.90"
+  tensorParallelSize: 1
+  maxNumSeqs: 1
+  maxNumBatchedTokens: 1024
+  # Avoid CUDA graph memory for the initial fit test; trades throughput for headroom.
+  enforceEager: true
+  extraArgs: []
+
+huggingFace:
+  existingSecret: ""
+  tokenKey: HF_TOKEN
+
+# g5.2xlarge nodes have 32 GiB physical RAM, with less allocatable to pods.
+resources:
+  requests:
+    cpu: "4"
+    memory: 20Gi
+    nvidia.com/gpu: "1"
+  limits:
+    cpu: "8"
+    memory: 26Gi
+    nvidia.com/gpu: "1"
+
+tolerations:
+  - key: g5-gpu
+    operator: Equal
+    value: "true"
+    effect: NoSchedule
+
+cache:
+  storageClassName: gp3-csi
+  accessMode: ReadWriteOnce
+  size: 50Gi
+
+shmSize: 2Gi

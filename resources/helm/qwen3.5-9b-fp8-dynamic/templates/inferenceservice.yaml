@@ -1,0 +1,39 @@
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: qwen3-5-9b-fp8-dynamic
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: qwen3-5-9b-fp8-dynamic
+    opendatahub.io/dashboard: "true"
+  annotations:
+    openshift.io/display-name: Qwen3.5 9B FP8 Dynamic
+    serving.kserve.io/deploymentMode: {{ .Values.serving.deploymentMode | quote }}
+    {{- with .Values.serving.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  predictor:
+    minReplicas: {{ .Values.replicaCount }}
+    maxReplicas: {{ .Values.replicaCount }}
+    deploymentStrategy:
+      type: Recreate
+    serviceAccountName: qwen3-5-9b-fp8-dynamic
+    nodeSelector:
+      {{- toYaml .Values.nodeSelector | nindent 6 }}
+    tolerations:
+      {{- toYaml .Values.tolerations | nindent 6 }}
+    model:
+      runtime: qwen3-5-9b-fp8-dynamic
+      modelFormat:
+        name: pytorch
+      resources:
+        {{- toYaml .Values.resources | nindent 8 }}
+    volumes:
+      - name: model-cache
+        persistentVolumeClaim:
+          claimName: qwen3-5-9b-fp8-dynamic-cache
+      - name: shm
+        emptyDir:
+          medium: Memory
+          sizeLimit: {{ .Values.shmSize }}

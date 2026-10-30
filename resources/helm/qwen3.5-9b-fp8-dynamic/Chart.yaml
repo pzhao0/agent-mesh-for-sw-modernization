@@ -1,0 +1,6 @@
+apiVersion: v2
+name: qwen3-5-9b-fp8-dynamic
+description: KServe vLLM endpoint for Qwen3.5 9B FP8 Dynamic on one NVIDIA A10G
+type: application
+version: 0.1.0
+appVersion: "0.27.1"
