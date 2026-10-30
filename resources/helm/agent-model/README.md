@@ -22,7 +22,8 @@ compatible GPU node. Qwen requires a CUDA-compatible R580+ driver.
 
 
 Both profiles use one GPU, tensor parallel size 1, and a 50 GiB ReadWriteOnce
-cache on `gp3-csi`. See [values.yaml](values.yaml) for shared and profile defaults.
+cache using the cluster's default storage class. See [values.yaml](values.yaml)
+for shared and profile defaults.
 Qwen is text only, with eager execution, one concurrent sequence, and 1,024
 batched tokens. Its image and model revision are pinned. On A10G, vLLM uses
 weight-only FP8 with BF16 computation through Marlin. 
@@ -66,6 +67,9 @@ reapply any desired overrides to avoid carrying previous overrides forward.
 These resources use release-based names, unlike the previous standalone charts.
 Existing installations of those charts are separate releases; this chart does
 not automatically adopt their resources or cache PVCs.
+
+Uninstall with `helm uninstall agent-model -n "$NAMESPACE"`; this deletes the
+cache PVC.
 
 Wait for readiness and get the endpoint:
 

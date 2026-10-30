@@ -10,4 +10,6 @@ spec:
   resources:
     requests:
       storage: {{ $config.cache.size }}
-  storageClassName: {{ $config.cache.storageClassName }}
+  {{- with $config.cache.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}

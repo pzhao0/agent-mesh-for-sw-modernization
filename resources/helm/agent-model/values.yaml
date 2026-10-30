@@ -23,7 +23,8 @@ huggingFace:
 # Tolerations permit placement; use nodeSelector to constrain the GPU pool.
 nodeSelector: {}
 cache:
-  storageClassName: gp3-csi
+  # Empty uses the cluster's default storage class.
+  storageClassName: ""
   accessMode: ReadWriteOnce
   size: 50Gi
 
