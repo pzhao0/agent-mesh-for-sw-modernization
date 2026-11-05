@@ -2,11 +2,9 @@
 
 These tests require an existing deployment and oc login. Pipeline tests also
 require --run-pipelines (or make test-cli-e2e RUN_PIPELINES=true). The query test
-uses the existing index. CLI_E2E_PIPELINE_TIMEOUT_SECONDS defaults to two hours;
-CLI_E2E_COMMAND_TIMEOUT_SECONDS defaults to 30 minutes.
+uses the existing index.
 """
 
-import os
 import re
 import time
 from pathlib import Path
@@ -25,6 +23,7 @@ REPO_LIST = (
     Path(__file__).resolve().parents[3]
     / "workflows/examples/code_understanding/assets/repos/repo_list.json"
 )
+ADHOC_QUERY_TIMEOUT = 1800
 
 
 def _artifact_run(client, namespace, experiment_suffix, category, kfp_run_id, *, multi_repo=False):
@@ -103,20 +102,17 @@ def _wait_for_run(client, run_id, timeout):
     )
 
 
-def _submit_and_wait(run_cli, client, namespace, args, *, repo_list=None):
-    command_timeout = int(os.environ.get("CLI_E2E_COMMAND_TIMEOUT_SECONDS", "1800"))
-    pipeline_timeout = int(os.environ.get("CLI_E2E_PIPELINE_TIMEOUT_SECONDS", "7200"))
-
+def _submit_and_wait(run_cli, client, namespace, args, *, pipeline_timeout, repo_list=None):
     command = ["make", "run-pipelines", f"ARGS={args}"]
     if repo_list is not None:
         run_cli(
             ["make", "apply-secrets", f"PIPELINE_GIT_REPO_LIST={repo_list}"],
             name="pipeline-repository-list",
-            timeout=command_timeout,
+            timeout=500,
         )
     else:
         command.extend([f"PIPELINE_GIT_REPO={REPO}", f"PIPELINE_GIT_BRANCH={BRANCH}"])
-    run_cli(command, name="pipeline-submission", timeout=command_timeout)
+    run_cli(command, name="pipeline-submission", timeout=500)
     submission_log = run_cli(
         ["oc", "logs", "job/run-pipelines", "--namespace", namespace],
         name="pipeline-submission-logs",
@@ -187,11 +183,10 @@ def _assert_query_answer(output):
 
 
 def test_adhoc_query_returns_answer(run_cli):
-    command_timeout = int(os.environ.get("CLI_E2E_COMMAND_TIMEOUT_SECONDS", "1800"))
     output = run_cli(
         ["wrappers/adhoc.sh", QUESTION, "--git-repo", REPO, "--git-branch", BRANCH],
         name="adhoc-query",
-        timeout=command_timeout,
+        timeout=ADHOC_QUERY_TIMEOUT,
     )
     _assert_query_answer(output)
 
@@ -201,7 +196,11 @@ def test_analysis_only_pipeline_returns_report(
     run_cli, deployed_kfp_client, deployed_mlflow_client, deployed_namespace, tmp_path
 ):
     run_id = _submit_and_wait(
-        run_cli, deployed_kfp_client, deployed_namespace, "--single-repo --analysis-only"
+        run_cli,
+        deployed_kfp_client,
+        deployed_namespace,
+        "--single-repo --analysis-only",
+        pipeline_timeout=3600,
     )
     _assert_analysis_report(deployed_mlflow_client, deployed_namespace, run_id, tmp_path)
 
@@ -210,7 +209,13 @@ def test_analysis_only_pipeline_returns_report(
 def test_single_repo_pipeline_creates_report_and_index(
     run_cli, deployed_kfp_client, deployed_mlflow_client, deployed_namespace, tmp_path
 ):
-    run_id = _submit_and_wait(run_cli, deployed_kfp_client, deployed_namespace, "--single-repo")
+    run_id = _submit_and_wait(
+        run_cli,
+        deployed_kfp_client,
+        deployed_namespace,
+        "--single-repo",
+        pipeline_timeout=7200,
+    )
     client = deployed_mlflow_client
     _assert_analysis_report(client, deployed_namespace, run_id, tmp_path)
 
@@ -222,7 +227,12 @@ def test_multi_repo_pipeline_creates_report_and_index(
     run_cli, deployed_kfp_client, deployed_mlflow_client, deployed_namespace, tmp_path
 ):
     run_id = _submit_and_wait(
-        run_cli, deployed_kfp_client, deployed_namespace, "--multi-repo", repo_list=REPO_LIST
+        run_cli,
+        deployed_kfp_client,
+        deployed_namespace,
+        "--multi-repo",
+        pipeline_timeout=10800,
+        repo_list=REPO_LIST,
     )
     _assert_analysis_report(
         deployed_mlflow_client, deployed_namespace, run_id, tmp_path, multi_repo=True
@@ -232,13 +242,12 @@ def test_multi_repo_pipeline_creates_report_and_index(
 
 @pytest.mark.pipeline
 def test_multi_repo_combined_index_query_returns_answer(run_cli):
-    command_timeout = int(os.environ.get("CLI_E2E_COMMAND_TIMEOUT_SECONDS", "1800"))
     output = run_cli(
         [
             "wrappers/adhoc.sh",
             "Which repositories share dependencies that affect migration order?",
         ],
         name="combined-index-query",
-        timeout=command_timeout,
+        timeout=ADHOC_QUERY_TIMEOUT,
     )
     _assert_query_answer(output)

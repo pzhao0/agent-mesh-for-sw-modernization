@@ -178,7 +178,14 @@ def test_multi_repo_submission_applies_readme_list_before_submitting(monkeypatch
     client = Mock()
 
     assert (
-        submit(run_cli, client, "namespace", "--multi-repo", repo_list=helpers["REPO_LIST"])
+        submit(
+            run_cli,
+            client,
+            "namespace",
+            "--multi-repo",
+            pipeline_timeout=10800,
+            repo_list=helpers["REPO_LIST"],
+        )
         == "selected-run"
     )
 
@@ -190,8 +197,7 @@ def test_multi_repo_submission_applies_readme_list_before_submitting(monkeypatch
     ]
     assert commands[1] == ["make", "run-pipelines", "ARGS=--multi-repo"]
     assert commands[2] == ["oc", "logs", "job/run-pipelines", "--namespace", "namespace"]
-    waiter.assert_called_once()
-    assert waiter.call_args.args[:2] == (client, "selected-run")
+    waiter.assert_called_once_with(client, "selected-run", 10800)
 
 
 @pytest.mark.parametrize(
